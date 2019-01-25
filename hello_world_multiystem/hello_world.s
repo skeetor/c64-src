@@ -8,14 +8,23 @@
 
 .ifdef VC20
 
+.out "Building VC20 variant"
+
+.include "vic20.inc"
+
+CLRSCR				= $e55f
+
 .endif
 
 ; Default is C64 mode
 
-.ifndef SCREEN
+.ifndef SCREEN_PTR
+
+.out "Building C64 variant"
+
+.include "c64.inc"
 
 CLRSCR				= $e544
-SCREEN              = $0400
 
 .endif
 
@@ -35,6 +44,14 @@ main:
 
 	jsr	CLRSCR
 
+	lda SCREEN_PTR
+	sta @screenWrite1+1
+	sta @screenWrite2+1
+	
+	lda SCREEN_PTR+1
+	sta @screenWrite1+2
+	sta @screenWrite2+2
+	
     ldy #GreetingsLen
 
 @print:
@@ -42,7 +59,7 @@ main:
 
 @screenWrite1:
 
-    sta SCREEN-1,y
+    sta $0400-1,y
 
     dey
     bne @print
@@ -51,7 +68,7 @@ main:
 	
 @screenWrite2:
 
-    sta SCREEN+40
+    sta $0400
 	
     rts
 
