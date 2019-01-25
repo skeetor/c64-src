@@ -4,8 +4,6 @@
 ; Execute with SYS __LOADADDR__
 ; Default is 49152 ($C000)
 
-;.include "c64_screenmap.inc"
-
 SCREEN              = $0400
 VIC_BORDERCOLOR     = $D020
 VIC_BG_COLOR0       = $D021
