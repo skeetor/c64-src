@@ -17,6 +17,7 @@ BORDER_COLOR		= $900f
 
 .endif
 
+
 ; Default is C64 mode
 
 .ifndef SCREEN_PTR
