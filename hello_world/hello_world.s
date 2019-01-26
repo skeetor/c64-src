@@ -50,14 +50,12 @@ main:
     bne @print
 
     sta VIC_CHAR_COLOR+40
-	lda #'A'
-    sta SCREEN+40
 	
     rts
 
 .segment "DATA"
 
-Greetings: .byte "ABC abc"
+Greetings: .byte "---===<* GREETINGS *>===---"
 GreetingsLen = *-Greetings
 
 .byte 0
