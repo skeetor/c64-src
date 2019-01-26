@@ -4,7 +4,7 @@
 ; Execute with SYS __LOADADDR__
 ; Default is 49152 ($C000)
 
-.include "c64_screenmap.inc"
+.include "screenmap.inc"
 
 .ifdef VC20
 
@@ -16,6 +16,7 @@ CLRSCR				= $e55f
 BORDER_COLOR		= $900f
 
 .endif
+
 
 ; Default is C64 mode
 

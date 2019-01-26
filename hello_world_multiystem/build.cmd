@@ -26,7 +26,7 @@ del /F /Q obj\*.*
 echo System: %SYSTEM_DEFINE%
 echo Running assembler
 echo=
-ca65 -W1 -g -l obj\hello_world.lst -mm near -t c64 -D %SYSTEM_DEFINE% -o obj\hello_world.o hello_world.s
+ca65 -I ..\include -W1 -g -l obj\hello_world.lst -mm near -t c64 -D %SYSTEM_DEFINE% -o obj\hello_world.o hello_world.s
 
 echo=
 echo Done. Running linker
