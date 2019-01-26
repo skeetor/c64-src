@@ -34,6 +34,12 @@ main:
     ldy #GreetingsLen
     ldx #DARK_GREY
 
+.ifdef UNDEFINED_SYMBOL
+	lda #<Greetings
+	ldy #>Greetings
+	jsr $ab1e
+.endif
+
 @print:
     lda Greetings-1,y
     sta SCREEN-1,y
@@ -51,5 +57,7 @@ main:
 
 .segment "DATA"
 
-Greetings: .byte "---===<* GREETINGS *>===---"
+Greetings: .byte "ABC abc"
 GreetingsLen = *-Greetings
+
+.byte 0
