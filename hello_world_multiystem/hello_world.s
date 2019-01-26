@@ -4,7 +4,7 @@
 ; Execute with SYS __LOADADDR__
 ; Default is 49152 ($C000)
 
-.include "c64_screenmap.inc"
+.include "screenmap.inc"
 
 .ifdef VC20
 
@@ -13,8 +13,10 @@
 .include "vic20.inc"
 
 CLRSCR				= $e55f
+BORDER_COLOR		= $900f
 
 .endif
+
 
 ; Default is C64 mode
 
@@ -25,32 +27,50 @@ CLRSCR				= $e55f
 .include "c64.inc"
 
 CLRSCR				= $e544
+BORDER_COLOR		= $d020
 
 .endif
 
 .export __LOADADDR__ = *
 .export STARTADDRESS = *
 
-; Here we define the address bytes needed by C64 so it knows where it should load it
-; to if loaded with LOAD "PRG",8,1
-; I expected that the linker should do this, but it doesn't seem to work, so this is a workaround.
-
 .segment "LOADADDR"
 .byte .LOBYTE( __LOADADDR__ ), .HIBYTE( __LOADADDR__ )
 
 .segment "CODE"
 
-main:
+_EntryPoint = MainEntry
+
+basicstub:
+.word @nextline
+.word 10 ; line number
+.byte $9e ;SYS
+
+.byte <(((_EntryPoint / 10000) .mod 10) + $30)
+.byte <(((_EntryPoint / 1000)  .mod 10) + $30)
+.byte <(((_EntryPoint / 100 )  .mod 10) + $30)
+.byte <(((_EntryPoint / 10 )   .mod 10) + $30)
+.byte <((_EntryPoint           .mod 10) + $30)
+.byte 0 ;end of line
+
+@nextline:
+.word 0 ;empty line == end pf BASIC
+
+MainEntry:
+	lda #0
+	sta BORDER_COLOR
 
 	jsr	CLRSCR
 
-	lda SCREEN_PTR
+	ldy SCREEN_PTR
+	dey
+	tya
 	sta @screenWrite1+1
-	sta @screenWrite2+1
 	
-	lda SCREEN_PTR+1
+	ldy SCREEN_PTR+1
+	dey
+	tya
 	sta @screenWrite1+2
-	sta @screenWrite2+2
 	
     ldy #GreetingsLen
 
@@ -59,20 +79,16 @@ main:
 
 @screenWrite1:
 
-    sta $0400-1,y
+    sta $0000,y
 
     dey
     bne @print
 
-	lda #'A'
-	
-@screenWrite2:
-
-    sta $0400
-	
     rts
 
 .segment "DATA"
+
+.macpack cbm
 
 Greetings: .byte "---===<* GREETINGS *>===---"
 GreetingsLen = *-Greetings
