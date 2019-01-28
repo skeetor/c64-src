@@ -1,0 +1,9 @@
+@echo off
+
+REM before first use copy this file to cc65_env_user.bat (not renaming it) and then adjust
+REM it to your local environment. The copied file is set on the ignorelist, so you can update
+REM the repository without loosing your local changes or accidentically committing it.
+
+
+REM This must point to the root of your cc65 installation.
+set CC65_HOME=E:\Programme\cc65

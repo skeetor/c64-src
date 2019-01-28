@@ -1,6 +1,6 @@
 @echo off
 
-set CC65_HOME=E:\Programme\cc65
+call cc65_env_user.bat
 
 set PATH=%PATH%;%CC65_HOME%\bin
 
