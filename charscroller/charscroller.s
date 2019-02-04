@@ -16,11 +16,14 @@ VICCHARSETBLOCKNO       = 7                             ;Nr. (0 - 7) des 2KB-Blo
 VICBITMAPBBLOCKNO       = 0                             ;Nr. (0 - 1) des 8KB-Blocks für die BITMAP-Grafik       | Standard: 0
 VICBASEADR              = VICBANKNO*16384               ;Startadresse der gewählten VIC-Bank                    | Standard: $0000
 VICCHARSETBLOCK         = VICCHARSETBLOCKNO*2048        ;Adresse des Zeichensatzes                              | Standard: $1000 ($d000)
-VICCHARSETADR           = VICCHARSETBLOCK+VICBASEADR
+VICCHARSETADR           = VICCHARSETBLOCK+VICBASEADR	; $3800
 
 CHARROMADR				= $d000
 ZP_HELPADR1             = $fb
 ZP_HELPADR2             = $fd
+
+HDelayValue				= 5
+VDelayValue				= 0
 
 .segment "CODE"
 
@@ -85,6 +88,11 @@ rts
 
 .proc SetupIRQ
 
+	lda #HDelayValue
+	sta HDelay
+	lda #VDelayValue
+	sta VDelay
+
 	lda $0314
 	sta IRQAddress
 	lda $0315
@@ -100,11 +108,67 @@ rts
 	rts
 
 @IRQ:
-	inc	VIC_BORDERCOLOR
+	pha
+	txa
+	pha
+	tya
+	pha
 
+	lda HDelay
+	beq @DoVScroll
+
+	dec HDelay
+	bne @DoVScroll
+
+	lda #HDelayValue
+	sta HDelay
+
+	ldx #8
+
+@loop:
+	;dec	VIC_BORDERCOLOR
+
+	lda VICCHARSETADR+8,x
+	tay
+	and #1
+	tya
+	beq @ClrCarray
+	sec
+	bcs @DoRotate
+
+@ClrCarray:
+	clc
+
+@DoRotate:
+	rol
+	sta VICCHARSETADR+8,x
+	dex
+	bne @loop
+
+@DoVScroll:
+	lda VDelay
+	beq @Continue
+
+	dec HDelay
+	bne @Continue
+
+	lda #VDelayValue
+	sta VDelay
+
+	;inc	VIC_BORDERCOLOR
+
+@Continue:
+	pla
+	tay
+	pla
+	tax
+	pla
 	jmp $0000
 IRQAddress = *-2
 
 .endproc
 
 .segment "DATA"
+
+HDelay: .byte 0
+VDelay: .byte 0
