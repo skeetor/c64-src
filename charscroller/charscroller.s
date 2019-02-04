@@ -47,6 +47,8 @@ MainEntry:
 
 	cli                                ;Interrupts freigeben
 
+	jsr SetupIRQ
+
     rts
 
 .proc CopyCharrROM
@@ -78,6 +80,30 @@ MainEntry:
 	bne @loopPage                      ;solange ungleich 0 nach loopPage springen
 
 rts
+
+.endproc
+
+.proc SetupIRQ
+
+	lda $0314
+	sta IRQAddress
+	lda $0315
+	sta IRQAddress+1
+
+	sei
+	lda #<@IRQ                          ;LSB unserer IRQ-Routine in den Akku
+	sta $0314
+	lda #>@IRQ                          ;MSB
+	sta $0315
+	cli
+
+	rts
+
+@IRQ:
+	inc	VIC_BORDERCOLOR
+
+	jmp $0000
+IRQAddress = *-2
 
 .endproc
 
