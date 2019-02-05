@@ -17,24 +17,30 @@ VICBITMAPBBLOCKNO       = 0                             ;Nr. (0 - 1) des 8KB-Blo
 VICBASEADR              = VICBANKNO*16384               ;Startadresse der gewählten VIC-Bank                    | Standard: $0000
 VICCHARSETBLOCK         = VICCHARSETBLOCKNO*2048        ;Adresse des Zeichensatzes                              | Standard: $1000 ($d000)
 VICCHARSETADR           = VICCHARSETBLOCK+VICBASEADR	; $3800
+SCROLLCHARADDR			= VICCHARSETADR+8				; Uses 'A' to scroll $3808
 
 CHARROMADR				= $d000
 ZP_HELPADR1             = $fb
 ZP_HELPADR2             = $fd
 
-HDelayValue				= 5
-VDelayValue				= 0
-
 .segment "CODE"
 
 ; We want to have a basic loder, so we 
 _EntryPoint = MainEntry
-.include "basicstub.inc"
+;.include "basicstub.inc"
 
 MainEntry:
 
 	lda #VICSCREENBLOCKNO*16+VICCHARSETBLOCKNO*2
 	sta $d018                          ;Adresse für Bildschirm und Zeichensatz festlegen
+
+	jsr CopyCharrROM                   ;Zeichensatz kopieren
+
+	;jsr SetupIRQ
+
+    rts
+
+.proc CopyCharrROM
 
 	sei                                ;IRQs sperren
 
@@ -42,19 +48,6 @@ MainEntry:
 	pha                                ;auf dem Stack merken
 	and #%11111011                     ;BIT-2 (E/A-Bereich) ausblenden
 	sta $01                            ;und zurückschreiben
-
-	jsr CopyCharrROM                   ;Zeichensatz kopieren
-
-	pla                                ;ROM-Einstellung vom Stack holen
-	sta $01                            ;wiederherstellen
-
-	cli                                ;Interrupts freigeben
-
-	jsr SetupIRQ
-
-    rts
-
-.proc CopyCharrROM
 
 	lda #<CHARROMADR                   ;Quelle (CharROM) auf die Zero-Page
 	sta ZP_HELPADR1
@@ -82,15 +75,19 @@ MainEntry:
 	dex                                ;'Seiten'-Zähler (acht Seiten zu 256 Bytes) verringern
 	bne @loopPage                      ;solange ungleich 0 nach loopPage springen
 
-rts
+	pla                                ;ROM-Einstellung vom Stack holen
+	sta $01                            ;wiederherstellen
+	cli
+
+	rts
 
 .endproc
 
 .proc SetupIRQ
 
-	lda #HDelayValue
+	lda HDelayValue
 	sta HDelay
-	lda #VDelayValue
+	lda VDelayValue
 	sta VDelay
 
 	lda $0314
@@ -114,48 +111,8 @@ rts
 	tya
 	pha
 
-	lda HDelay
-	beq @DoVScroll
-
-	dec HDelay
-	bne @DoVScroll
-
-	lda #HDelayValue
-	sta HDelay
-
-	ldx #8
-
-@loop:
-	;dec	VIC_BORDERCOLOR
-
-	lda VICCHARSETADR+8,x
-	tay
-	and #1
-	tya
-	beq @ClrCarray
-	sec
-	bcs @DoRotate
-
-@ClrCarray:
-	clc
-
-@DoRotate:
-	rol
-	sta VICCHARSETADR+8,x
-	dex
-	bne @loop
-
-@DoVScroll:
-	lda VDelay
-	beq @Continue
-
-	dec HDelay
-	bne @Continue
-
-	lda #VDelayValue
-	sta VDelay
-
-	;inc	VIC_BORDERCOLOR
+	jsr CharScrollHorizontal
+	jsr CharScrollVertical
 
 @Continue:
 	pla
@@ -168,7 +125,95 @@ IRQAddress = *-2
 
 .endproc
 
-.segment "DATA"
+.proc CharScrollHorizontal
 
-HDelay: .byte 0
-VDelay: .byte 0
+	lda HDelayValue
+	beq @Done
+
+	dec HDelay
+	bne @Done
+
+	lda HDelayValue
+	sta HDelay
+
+	ldx #8
+
+	lda HDirection
+	beq @ScrollLeft
+
+@ScrollRight:
+	lda SCROLLCHARADDR-1,x
+
+	tay
+	ror
+	tya
+
+	ror
+	sta SCROLLCHARADDR-1,x
+	dex
+	bne @ScrollRight
+
+	rts
+
+@ScrollLeft:
+	lda SCROLLCHARADDR-1,x
+
+	tay
+	rol
+	tya
+
+	rol
+	sta SCROLLCHARADDR-1,x
+	dex
+	bne @ScrollLeft
+
+@Done:
+
+	rts
+
+.endproc
+
+
+.proc CharScrollVertical
+
+	lda VDelayValue
+	beq @Done
+
+	dec VDelay
+	bne @Done
+
+	lda VDelayValue
+	sta VDelay
+
+	ldx #7
+
+	lda VDirection
+	beq @ScrollUp
+
+@ScrollUp:
+	lda SCROLLCHARADDR
+	pha
+
+@ScrollUpLoop:
+	lda SCROLLCHARADDR,x
+	dex
+	sta SCROLLCHARADDR-1,x
+	bne @ScrollUpLoop
+
+	pla
+	sta SCROLLCHARADDR+7
+
+@Done:
+
+	rts
+
+.endproc
+
+.segment "DATA"
+HDirection: .byte 1
+HDelayValue: .byte 0
+HDelay: .byte 1
+
+VDirection: .byte 1
+VDelayValue: .byte 1
+VDelay: .byte 1
