@@ -34,12 +34,12 @@ MainEntry:
 	lda #VICSCREENBLOCKNO*16+VICCHARSETBLOCKNO*2
 	sta $d018                          ;Adresse für Bildschirm und Zeichensatz festlegen
 
-	jsr CopyCharrROM                   ;Zeichensatz kopieren
+	jsr CopyCharROM                   ;Zeichensatz kopieren
 	jsr SetupIRQ
 
     rts
 
-.proc CopyCharrROM
+.proc CopyCharROM
 
 	sei                                ;IRQs sperren
 
