@@ -35,8 +35,7 @@ MainEntry:
 	sta $d018                          ;Adresse für Bildschirm und Zeichensatz festlegen
 
 	jsr CopyCharrROM                   ;Zeichensatz kopieren
-
-	;jsr SetupIRQ
+	jsr SetupIRQ
 
     rts
 
@@ -105,30 +104,40 @@ MainEntry:
 	rts
 
 @IRQ:
-	pha
-	txa
-	pha
-	tya
-	pha
+; State saving must be enabled if not using kernel
+; For this version the kernel already does it, so we don't need to do it
+; here as well.
+
+;	pha
+;	txa
+;	pha
+;	tya
+;	pha
+
+	lda HDelayValue
+	beq @VScroll
 
 	jsr CharScrollHorizontal
+
+@VScroll:
+
+	lda VDelayValue
+	beq @Continue
+
 	jsr CharScrollVertical
 
 @Continue:
-	pla
-	tay
-	pla
-	tax
-	pla
+;	pla
+;	tay
+;	pla
+;	tax
+;	pla
 	jmp $0000
 IRQAddress = *-2
 
 .endproc
 
 .proc CharScrollHorizontal
-
-	lda HDelayValue
-	beq @Done
 
 	dec HDelay
 	bne @Done
@@ -176,28 +185,42 @@ IRQAddress = *-2
 
 .proc CharScrollVertical
 
-	lda VDelayValue
-	beq @Done
-
 	dec VDelay
 	bne @Done
 
 	lda VDelayValue
 	sta VDelay
 
-	ldx #7
-
 	lda VDirection
 	beq @ScrollUp
 
+	lda SCROLLCHARADDR+7
+	pha
+
+	ldx #7
+
+@ScrollDownLoop:
+	lda SCROLLCHARADDR-1,x
+	sta SCROLLCHARADDR,x
+	dex
+	bne @ScrollDownLoop
+
+	pla
+	sta SCROLLCHARADDR
+	jmp @Done
+
 @ScrollUp:
+	ldy #7
+	ldx #0
+
 	lda SCROLLCHARADDR
 	pha
 
 @ScrollUpLoop:
-	lda SCROLLCHARADDR,x
-	dex
-	sta SCROLLCHARADDR-1,x
+	lda SCROLLCHARADDR+1,x
+	sta SCROLLCHARADDR,x
+	inx
+	dey
 	bne @ScrollUpLoop
 
 	pla
@@ -211,9 +234,9 @@ IRQAddress = *-2
 
 .segment "DATA"
 HDirection: .byte 1
-HDelayValue: .byte 0
+HDelayValue: .byte 5
 HDelay: .byte 1
 
 VDirection: .byte 1
-VDelayValue: .byte 1
+VDelayValue: .byte 9
 VDelay: .byte 1
