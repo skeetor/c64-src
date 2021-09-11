@@ -21,6 +21,12 @@ set SYSTEM_CONFIG="c64-asm.cfg"
 set SYSTEM_DEFINE=C64
 )
 
+
+if "%SYSTEM%" == "c128" (
+set SYSTEM_CONFIG="c128-asm.cfg"
+set SYSTEM_DEFINE=C128
+)
+
 del /F /Q obj\*.*
 
 echo System: %SYSTEM_DEFINE%
