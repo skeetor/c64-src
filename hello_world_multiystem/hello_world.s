@@ -46,6 +46,7 @@ basicstub:
 .word 10 ; line number
 .byte $9e ;SYS
 
+
 .byte <(((_EntryPoint / 10000) .mod 10) + $30)
 .byte <(((_EntryPoint / 1000)  .mod 10) + $30)
 .byte <(((_EntryPoint / 100 )  .mod 10) + $30)
