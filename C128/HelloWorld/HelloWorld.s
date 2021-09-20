@@ -115,23 +115,18 @@ HelloWorldVDC:
 	sta	VDC_DATA
 	jsr	VDCSync
 
-	ldy #GreetingsLen
-
-@PrintLoop:
 	lda	#VDC_DSP_UPDATE_LO
 	sta VDC_INDEX
 	sty	VDC_DATA
 	jsr	VDCSync
 
+	ldy #GreetingsLen
+
+@PrintLoop:
+
 	lda	#VDC_DATA_REG
 	sta VDC_INDEX
 	lda Greetings-1,y
-	sta	VDC_DATA
-	jsr	VDCSync
-
-	lda	#VDC_WORD_COUNT
-	sta VDC_INDEX
-	lda #1
 	sta	VDC_DATA
 	jsr	VDCSync
 
