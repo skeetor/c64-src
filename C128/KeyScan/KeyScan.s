@@ -477,24 +477,19 @@ MainEntry:
 ; AC - Character to be printed
 ; Y - Offset to screen position
 ; Pointer to screen location in CONSOLE_PTR
-; %55 - Temp
 .proc PrintHex
 
-	sta $55
-
-	lda #>(@CheckChar-1)
-	pha
-	lda #<(@CheckChar-1)
+	ldx #$02
 	pha
 
-	lda $55
-	and #$f0
 	lsr
 	lsr
 	lsr
 	lsr
 
-@CheckChar:
+@PrintChar:
+	and #$0f
+
 	cmp #$0a
 	bcs @Alpha
 	adc #$3a
@@ -502,9 +497,11 @@ MainEntry:
 @Alpha:
 	sbc #$09
 	sta (CONSOLE_PTR),y
-	lda $55
-	and #$0f
+	pla	
 	iny
+	dex
+	bne @PrintChar
+	pha
 
 	rts
 .endproc
