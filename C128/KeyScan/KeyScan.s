@@ -22,6 +22,7 @@ COL_MEDIUM_GREY		= 12
 COL_LIGHT_GREY		= 15
 
 SCREEN_LINES		= 25
+TEXT_LINES			= 25
 SCREEN_COLUMNS		= 40
 
 CONSOLE_PTR			= SCREEN_PTR
@@ -106,7 +107,7 @@ MainEntry:
 
 @MainLoop:
 	ldx #$00
-	stx LineNr
+	stx TextLine
 
 	lda #<(SCREEN_VIC + SCREEN_COLUMNS)
 	sta CONSOLE_PTR
@@ -114,11 +115,20 @@ MainEntry:
 	sta CONSOLE_PTR+1
 
 @NextLine:
-	ldx LineNr
+	ldx TextLine
 	cpx #C128_KEY_LINES
 	beq @WaitKey
 
-	inc LineNr
+	inc TextLine
+
+	txa
+	pha
+	lda KeyLine,x
+	ldy #38
+	jsr PrintHex
+
+	pla
+	tax
 	lda KeyLine,x
 	ldx #$08		; Number of bits to print
 	ldy #$07		; Character offset
@@ -140,7 +150,7 @@ MainEntry:
 	jsr NextLine
 	jsr NextLine
 
-	ldx LineNr
+	ldx TextLine
 	cpx #$08
 	bne @Cont
 
@@ -174,9 +184,9 @@ MainEntry:
 	jsr KeyColor
 
 	lda #' '
-	sta LineNr+1
-	lda #'0'-1
-	sta LineNr+2
+	sta LineNrTxt+1
+	lda #'0'
+	sta LineNrTxt+2
 
 	lda #<SCREEN_VIC
 	sta CONSOLE_PTR
@@ -188,113 +198,85 @@ MainEntry:
 	lda #>Line00
 	sta STRING_PTR+1
 
-	lda #C128_KEY_LINES
-	sta LineIndex
-
-	jmp @StartTable
+	lda #$00
+	sta ShowLineTxt
+	sta TextLine
 
 @NextString:
-	ldy StringPos
-	jsr PrintString
 
-	; Increase Y coordinate for the next string
+	; The last two lines are just messages
+	cmp #23
+	bcs @StartOfLine		; >=
+
+	; Skip the C128 info line
+	cmp #16
+	bne @MatrixLine
+
+@StartOfLine:
+	lda #$01
+	sta ShowLineTxt
+	ldy #$00
+	jmp @PrintLine
+
+@MatrixLine:
+	ldy #$04
+
+@PrintLine:
+	jsr PrintStringZ
+
+	; Switch to next line string
+	iny		; Skip 0-Byte
 	tya
 	clc
-	adc StringPos
-	sta StringPos
-
-	; Next String. Each string is 4+1
-	lda #$05
-	clc
 	adc STRING_PTR
-	sta STRING_PTR
-	lda #$00
-	adc STRING_PTR+1
-	sta STRING_PTR+1
-
-	dec StringIndex
-	bne @NextString
-
-	; Print linenumber
-	; Save current string pointer
-	lda STRING_PTR
 	pha
 	lda STRING_PTR+1
+	adc #$00
 	pha
 
-	inc LineNr+2
-	lda LineNr+2
+	; Next line, as the matrix line number
+	; is printed below each character line
+	jsr NextLine
+
+	lda ShowLineTxt
+	eor #$01
+	sta ShowLineTxt
+	beq @NextLineNr
+
+	; Print the matrixline
+	lda #<LineNrTxt
+	sta STRING_PTR
+	lda #>LineNrTxt
+	sta STRING_PTR+1
+	ldy #$00
+	jsr PrintStringZ
+
+	inc LineNrTxt+2
+	lda LineNrTxt+2
 	cmp #'9'+1
-	bne @WriteLineNr
+	bne @NextLineNr
 
 	ldx #'1'
-	stx LineNr+1 
+	stx LineNrTxt+1 
 	dex
-	stx LineNr+2
+	stx LineNrTxt+2
 
-@WriteLineNr:
-	lda #<LineNr
-	sta STRING_PTR
-	lda #>LineNr
-	sta STRING_PTR+1
-	ldy #$00
-	jsr PrintString
-
-	; Restore current string pointer
-	pla
-	sta STRING_PTR+1
-	pla
-	sta STRING_PTR
-	; Done Linenumber
-
-	jsr NextLine
-	jsr NextLine
-
-	; Extra line seperator for the C128 lines
-	lda LineIndex
-	cmp #$03
-	bne @StartTable
-
-	; Save current string pointer
-	lda STRING_PTR
-	pha
-	lda STRING_PTR+1
-	pha
-
-	lda #<C128ExtendedTxt
-	sta STRING_PTR
-	lda #>C128ExtendedTxt
-	sta STRING_PTR+1
-	ldy #$00
-	jsr PrintString
-	jsr NextLine
-
-	; Restore current string pointer
+@NextLineNr:
 	pla
 	sta STRING_PTR+1
 	pla
 	sta STRING_PTR
 
-@StartTable:
-	ldy #$04
-	sty StringPos
+	inc TextLine
+	lda TextLine
+	cmp #TEXT_LINES
+	bne @NextString
 
-	lda #$08				; 8 Keys per Line
-	sta StringIndex
-	dec LineIndex
-	bmi @Done
-	jmp @NextString
+	jsr PrevLine
+	jsr PrevLine
 
-@Done:
-	; Print the exit info
-	lda #<AuthorTxt
-	sta STRING_PTR
-	lda #>AuthorTxt
-	sta STRING_PTR+1
-	ldy #$00
-	jsr PrintString
-
-	lda SysteMode
+@ShowSystemMode:
+	lda SystemMode
 	cmp	#C128_MODE|C64_MODE
 	beq @C64OnC128
 	cmp #C64_MODE
@@ -304,18 +286,16 @@ MainEntry:
 	sta STRING_PTR
 	lda #>C128Txt
 	sta STRING_PTR+1
-	ldy #SCREEN_COLUMNS-1-5
-	jsr PrintString
-	jmp @Cont
+	ldy #SCREEN_COLUMNS-1-4
+	bne @Cont
 
 @C64Mode:
 	lda #<C64Txt
 	sta STRING_PTR
 	lda #>C64Txt
 	sta STRING_PTR+1
-	ldy #SCREEN_COLUMNS-1-4
-	jsr PrintString
-	jmp @Cont
+	ldy #SCREEN_COLUMNS-1-3
+	bne @Cont
 
 @C64OnC128:
 	lda #<C64ModeTxt
@@ -323,17 +303,9 @@ MainEntry:
 	lda #>C64ModeTxt
 	sta STRING_PTR+1
 	ldy #SCREEN_COLUMNS-1-8
-	jsr PrintString
 
 @Cont:
-	jsr NextLine
-
-	lda #<ExitTxt
-	sta STRING_PTR
-	lda #>ExitTxt
-	sta STRING_PTR+1
-	ldy #$00
-	jsr PrintString
+	jsr PrintStringZ
 
 	; We have to cheat with this character, because the
 	; 0-byte can not be printed with
@@ -472,13 +444,13 @@ MainEntry:
 
 .proc PrevLine
 
-	lda #SCREEN_COLUMNS
-	clc
-	sbc CONSOLE_PTR
+	lda CONSOLE_PTR
+	sec
+	sbc #SCREEN_COLUMNS
 	sta CONSOLE_PTR
 
-	lda #0
-	sbc	CONSOLE_PTR+1
+	lda CONSOLE_PTR+1
+	sbc	#$00
 	sta CONSOLE_PTR+1
 
 	rts
@@ -502,14 +474,25 @@ MainEntry:
 	rts
 .endproc
 
-; Print the character in AC
+; AC - Character to be printed
+; Y - Offset to screen position
 ; Pointer to screen location in CONSOLE_PTR
+; %55 - Temp
 .proc PrintHex
-	tax
 
-	ldy #$01
+	sta $55
 
-	and #$0f
+	lda #>(@CheckChar-1)
+	pha
+	lda #<(@CheckChar-1)
+	pha
+
+	lda $55
+	and #$f0
+	lsr
+	lsr
+	lsr
+	lsr
 
 @CheckChar:
 	cmp #$0a
@@ -519,26 +502,22 @@ MainEntry:
 @Alpha:
 	sbc #$09
 	sta (CONSOLE_PTR),y
-	txa
-	lsr
-	lsr
-	lsr
-	lsr
-	dey
-	bpl @CheckChar
+	lda $55
+	and #$0f
+	iny
 
 	rts
 .endproc
 
-; Print the character in AC
+; AC - Character to be printed
+; Y - Offset to screen position
 ; Pointer to screen location in CONSOLE_PTR
-; $55 - Helper
 .proc PrintBinary
-	ldy #$07
+	ldx #$07
 
 @Loop:
 	lsr
-	sta $55
+	pha
 	bcs @Print1
 	lda #$30
 	bne @Print
@@ -548,8 +527,9 @@ MainEntry:
 
 @Print:
 	sta (CONSOLE_PTR),y
-	lda $55
-	dey
+	pla
+	iny
+	dex
 	bpl @Loop
 
 	rts
@@ -674,7 +654,7 @@ MainEntry:
 ; Example: Start can be set to $0400 and Y
 ; 		to 10 to print the string in the middle
 ;
-.proc PrintString
+.proc PrintStringZ
 
 	STRING			= $55
 	OFFSET			= $57
@@ -713,36 +693,45 @@ MainEntry:
 .macpack cbm
 
 ScreenCol: .byte 0,0
-LineNr: .byte 'L',0,0,':',0
-LineIndex: .byte 0
-StringIndex: .byte 0	; Number of current line string
-StringPos: .byte 0		; Index of the line string
+LineNrTxt: .byte 'L',0,0,':',0
+TextLine: .byte 0
+ShowLineTxt: .byte 0
 
 KeyLine: .res C128_KEY_LINES,$00
 KeyPressed: .byte $ff
 
-C128ExtendedTxt: .byte "----===<* C128 EXTENDED KEYS *>===----",0
-AuthorTxt: .byte      "---- WRITTEN BY SPARHAWK --------------",0
-ExitTxt: .byte         "     PRESS RUN-STOP+Q TO EXIT",0
-
 C64Txt: .byte " C64",0
 C128Txt: .byte " C128",0
 C64ModeTxt: .byte " C128/C64",0
-SysteMode: .byte C128_MODE
+SystemMode: .byte C128_MODE
 ZPSafe: .res $10,0
 
-Line00: .byte  "CRSD",0,  "  F5",0,"  F3",0,"  F1",0,"  F7",0,"CRSL",0,  "  CR",0," DEL",0
-Line01: .byte  " SHL",0,  "   E",0,"   S",0,"   Z",0,"   4",0,"   A",0,  "   W",0,"   3",0
-Line02: .byte  "   X",0,  "   T",0,"   F",0,"   C",0,"   6",0,"   D",0,  "   R",0,"   5",0
-Line03: .byte  "   V",0,  "   U",0,"   H",0,"   B",0,"   8",0,"   G",0,  "   Y",0,"   7",0
-Line04: .byte  "   N",0,  "   O",0,"   K",0,"   M",0,"   0",0,"   J",0,  "   I",0,"   9",0
-Line05: .byte  "   ,",0,  "    ",0,"   :",0,"   .",0,"   -",0,"   L",0,  "   P",0,"   +",0
-Line06: .byte  "   /",0,"   ",30,0,"   =",0," SHR",0," HOM",0,"   ;",0,  "   *",0,"   ",28,0
-Line07: .byte  " RUN",0,  "   Q",0,"  C=",0," SPC",0,"   2",0," CTL",0,"   ",31,0,"   1",0
-; C128 Only
-Line08: .byte  "  #1",0, "  #7",0, "  #4",0,"  #2",0," TAB",0,"  #5",0,  "  #8",0," HLP",0
-Line09: .byte  "  #3",0, "  #9",0, "  #6",0," #CR",0,"  LF",0,"  #-",0,  "  #+",0," ESC",0
-Line10: .byte  "NOSC",0, " CSR",0, " CSL",0," CSD",0," CSU",0,"  #.",0,  "  #0",0," ALT",0
+Line00: .byte "CRSD  F5  F3  F1  F7CRSL  CR DEL",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line01: .byte " SHL   E   S   Z   4   A   W   3",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line02: .byte "   X   T   F   C   6   D   R   5",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line03: .byte "   V   U   H   B   8   G   Y   7",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line04: .byte "   N   O   K   M   0   J   I   9",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line05: .byte "   ,       :   .   -   L   P   +",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line06: .byte "   /   ",30,"   = SHR HOM   ;   *   ",28,0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line07: .byte " RUN   Q  C= SPC   2 CTL   ",31,"   1",0
+		.byte "   0   0   0   0   0   0   0   0",0
+		.byte "----====<* C128 EXTENDED KEYS *>====----",0
+Line08: .byte "  #1  #7  #4  #2 TAB  #5  #8 HLP",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line09: .byte "  #3  #9  #6 #CR  LF  #-  #+ ESC",0
+		.byte "   0   0   0   0   0   0   0   0",0
+Line10: .byte "NOSC CSR CSL CSD CSU  #.  #0 ALT",0
+		.byte "   0   0   0   0   0   0   0   0",0
+		.byte "---- WRITTEN BY SPARHAWK ---------------",0
+		.byte "     PRESS RUN-STOP+Q TO EXIT",0
+
 PROGRAM_LEN = *-basicstub
 
 ; If this is to be used only on a C128, everything below can be removed
@@ -843,7 +832,7 @@ PROGRAM_LEN = *-basicstub
 	iny
 
 @StoreMode:
-	sty SysteMode
+	sty SystemMode
 
 	jmp MainEntry
 
