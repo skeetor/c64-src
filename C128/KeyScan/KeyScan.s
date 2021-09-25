@@ -28,7 +28,6 @@ SCREEN_COLUMNS		= 40
 CONSOLE_PTR			= SCREEN_PTR
 SCREEN_VIC			= $0400
 COLOR_RAM			= $D800
-VIC_XSCAN			= $D02f	; C128 extended keymatrix bits 0-2
 
 .export __LOADADDR__ = *
 .export STARTADDRESS = *
@@ -173,6 +172,9 @@ MainEntry:
 	bpl @ZPRestore
 
 	jsr ClearScreen
+
+	lda #$00
+	sta INP_NDX
 
 	rts
 
@@ -548,14 +550,16 @@ MainEntry:
 ; $50 - TempValue
 .proc ScanKeys
 
-	ldy #$00			; No Key pressed
+	ldy #$ff			; No Key pressed
+	sty KeyPressedLine
+	iny
+	sty KeyPressed
+
+	; First scan the regular C64 8x8 matrix
+	ldx #$07
 
 	sei
-
-	; First scan the regular C64 matrix
-	ldx #$07
-	lda #$ff
-	sta VIC_XSCAN	; Disable the extra lines of C128
+	sta VIC_KBD_128	; Disable the extra lines of C128
 	lda #%01111111
 
 @NextKey:
@@ -566,6 +570,7 @@ MainEntry:
 	sta KeyLine,x	; Store key per matrixline
 	beq @NextLine
 	sta KeyPressed
+	stx KeyPressedLine
 	ldy #$01		; Key pressed flag
 
 @NextLine:
@@ -584,12 +589,13 @@ MainEntry:
 
 @NextXKey:
 	sta $50
-	sta VIC_XSCAN	; VIC port to low
+	sta VIC_KBD_128	; VIC port to low
 	lda CIA1_PRB	; Read key
 	eor #$ff		; Flip bits to make them highactive
 	sta KeyLine+8,x	; Store key per matrixline
 	beq @NextXLine
 	sta KeyPressed
+	stx KeyPressedLine
 	ldy #$01		; Key pressed flag
 
 @NextXLine:
@@ -696,6 +702,7 @@ ShowLineTxt: .byte 0
 
 KeyLine: .res C128_KEY_LINES,$00
 KeyPressed: .byte $ff
+KeyPressedLine: .byte $00
 
 C64Txt: .byte " C64",0
 C128Txt: .byte " C128",0
@@ -821,8 +828,8 @@ PROGRAM_LEN = *-basicstub
 	; can now reference labels again.
 
 	lda #$00
-	sta VIC_XSCAN
-	lda VIC_XSCAN
+	sta VIC_KBD_128
+	lda VIC_KBD_128
 	ldy #C64_MODE
 	cmp #$ff
 	beq @StoreMode
