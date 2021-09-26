@@ -1,13 +1,11 @@
 # Sprite and character editor for the C128
 
-### TODO: 
+Features done:
+Toggle X/Y size
+Toggle Multicolor
+Cycle color 1-3
 
 #### Sprites
-* Save sprite
-* Load sprite
-* Rotate 90 (left/right)
-* X/Y enlarge (Done)
-* Animate
 
 #### - Keys (* = not implemented)
 *A - Animate (cycle through frames)<br>
@@ -23,11 +21,10 @@ M - Multicolor<br>
 X - Toggle Width<br>
 Y - Toggle Heigth<br>
 *SPC - Toggle bit<br>
-*TAB - Cycle through color<br>
 *SHIFT Right/Left - Next/Previous frame<br>
-1 - Cycle Spritecolor 1
-2 - Cycle Spritecolor 2. Only for MC
-3 - Cycle Spritecolor 3. Only for MC
+1 - Cycle Spritecolor
+2 - Cycle Spritecolor MC0
+3 - Cycle Spritecolor MC1
 
 #### Font
 * Save font

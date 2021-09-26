@@ -147,6 +147,10 @@ SPRITE_COLOR0		= 1
 SPRITE_COLOR1		= 2
 SPRITE_COLOR2		= 3
 
+; Position of the color text.
+COLOR_TXT_ROW = 12
+COLOR_TXT_COLUMN = 27
+
 SPRITE_BASE			= $2000		; Sprite data pointer for first frame.
 MAIN_APP_BASE		= $5000		; Address where the main code is relocated to
 MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_BASE)/64)-1 ; The first frame
@@ -222,11 +226,11 @@ basicstub:
 	jsr CreateDebugSprite
 
 	; Enable preview sprite
-	lda #(SPRITE_BASE+64)/64			; Sprite data address
+	lda #(SPRITE_BASE+SPRITE_PREVIEW*64)/64			; Sprite data address
 	sta SPRITE_PTR+SPRITE_PREVIEW
 	lda #(1 << SPRITE_PREVIEW)
 	sta VIC_SPR_ENA		; Enable sprite 0
-	lda #COL_YELLOW
+	lda SpriteColorValue
 	sta SPRITE_COLOR+SPRITE_PREVIEW
 
 	jsr SpriteEditor
@@ -351,6 +355,10 @@ basicstub:
 
 @SkipRelocation:
 
+	lda	#$00
+	sta SPRITE_EXP_X
+	sta SPRITE_EXP_Y
+
 	rts
 
 .endproc
@@ -448,7 +456,9 @@ MAIN_APPLICATION_LOAD = *
 .org MAIN_APP_BASE
 MAIN_APPLICATION = *
 
-; Switch to the SpriteEditor mode
+; ******************************************
+; Sprite Editor
+; ******************************************
 .proc SpriteEditor
 
 	; Editormatrix screen position
@@ -505,40 +515,41 @@ MAIN_APPLICATION = *
 	jsr PrintStringZ
 
 	; Print the color choice
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*15)
+	lda #<(SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2))
 	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*15)
+	lda #>(SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2))
 	sta CONSOLE_PTR+1
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*16)
-	sta CONSOLE_PTR+2
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*16)
-	sta CONSOLE_PTR+3
 
-	ldx #7
-	ldy #28
-	lda #' '+128		; Inverse space
+	lda #<ColorTxt
+	sta STRING_PTR
+	lda #>ColorTxt
+	sta STRING_PTR+1
+
+	ldx #2
 
 @ColorSelection:
+	stx $50
+	ldy #COLOR_TXT_COLUMN
+	jsr PrintStringZ
+	ldx $50
+	txa
+	clc
+	adc #'1'
+	ldy #COLOR_TXT_COLUMN+5
 	sta (CONSOLE_PTR),y
-	sta (CONSOLE_PTR+2),y
-	iny
+	ldy #COLOR_TXT_COLUMN+8
+	lda #81		; Inverse O
+	sta (CONSOLE_PTR),y
+	jsr PrevLine
 	dex
 	bpl @ColorSelection
 
-	ldx #7
-	ldy #28
-	lda #$00
-
-@ColorRAMSelection:
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*15,y
-	clc
-	adc #$08
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*16,y
-	sec
-	sbc #$07
-	iny
-	dex
-	bpl @ColorRAMSelection
+	lda SpriteColorValue
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*COLOR_TXT_ROW+COLOR_TXT_COLUMN+8
+	lda SpriteColorValue+1
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN+8
+	lda SpriteColorValue+2
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
 
 	rts
 .endproc
@@ -568,6 +579,18 @@ MAIN_APPLICATION = *
 	cmp #$10				; M
 	beq ToggleMulticolor
 
+	ldx #$01
+	lda LastKeyLine,x
+	cmp	#$01				; 3
+	beq IncSpriteColor3
+
+	ldx #$07
+	lda LastKeyLine,x
+	cmp	#$01				; 1
+	beq IncSpriteColor1
+	cmp	#$08				; 2
+	beq IncSpriteColor2
+
 	rts
 .endproc
 
@@ -593,6 +616,39 @@ MAIN_APPLICATION = *
 	lda	VIC_SPR_MCOLOR
 	eor #(1 << SPRITE_PREVIEW)
 	sta VIC_SPR_MCOLOR
+	rts
+.endproc
+
+.proc IncSpriteColor1
+	inc SpriteColorValue
+.endproc
+
+.proc SetSpriteColor1
+	lda SpriteColorValue
+	sta VIC_SPR0_COLOR+SPRITE_PREVIEW
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*COLOR_TXT_ROW+COLOR_TXT_COLUMN+8
+	rts
+.endproc
+
+.proc IncSpriteColor2
+	inc SpriteColorValue+1
+.endproc
+
+.proc SetSpriteColor2
+	lda SpriteColorValue+1
+	sta VIC_SPR_MCOLOR0
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN+8
+	rts
+.endproc
+
+.proc IncSpriteColor3
+	inc SpriteColorValue+2
+.endproc
+
+.proc SetSpriteColor3
+	lda SpriteColorValue+2
+	sta VIC_SPR_MCOLOR1
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
 	rts
 .endproc
 
@@ -799,6 +855,11 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+
+; ******************************************
+; Character Editor
+; ******************************************
+
 .proc CharEditor
 
 	; Editormatrix screen position
@@ -827,6 +888,10 @@ MAIN_APPLICATION = *
 
 	rts
 .endproc
+
+; ******************************************
+; Library
+; ******************************************
 
 .proc ClearScreen
 
@@ -1344,7 +1409,8 @@ LeftBottomRight: .res $03, $00
 SpriteFrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 1..N
-
+ColorTxt: .byte "COLOR :",0
+SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
