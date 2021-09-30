@@ -30,33 +30,78 @@ COL_LIGHT_GREY		= 15
 
 ; Set bank
 ;
-SETBNK				= $ff68
+SETBANK				= $ff68
 
 ; Set file parameter
 ;
 ; A - Fileno
 ; X - Device number
 ; Y - Secondary device number
-SETLFS				= $ffba
+SETFPAR				= $ffba
 
 ; Set filename
 ;
-; 
+; A - Namelen
+; X - NameAdrLo
+; Y - NameAdrHi
+SETNAME				= $ffbd
 
 ; Load File
 ;
 ; X - Lo Start
 ; Y - Hi Start
-LOADSP				= $ffd5
+LOAD				= $ffd5
 
 ; Save File
 ;
-; A - Zeropage address of the start
+; A - Zeropage address of the startadress
 ; (A) - Lo Start
-; (A) - Hi Start
-; X - Lo End
-; Y - Hi End
-SAVESP				= $ffd8
+; (A+1) - Hi Start
+; X - Lo Endadress
+; Y - Hi Endadress
+SAVE				= $ffd8
+
+; Open logical file
+;
+; $b8 - logical file number
+; $b9 - secondary address
+; $b7 - filename length
+; $bb/$bc - filename address
+; $c7 - bank filename
+; These values can also be set using
+; SETPAR, SETNAM and SETBANK
+OPEN				= $ffc0
+
+; Close logical file
+;
+; A - logical filenumber
+CLOSE				= $ffc3
+
+; Set input filenumber
+;
+; A - logical filenumber
+CHKIN				= $ffc6
+
+; Set output filenumber
+;
+; A - logical filenumber
+CKOUT				= $ffc9
+
+; Clear channel
+;
+; -
+CLRCH				= $ffcc
+
+; Read from current input
+;
+; -
+; Returns the character in A.
+BSIN				= $ffcf
+
+; Write to current output
+;
+; A - byte to write
+BSOUT				= $ffd2
 
 ; To be added to cc65
 INP_NDX				= $D0
@@ -129,31 +174,35 @@ C128_KEY_LINES 		= 11
 SCREEN_VIC			= $0400
 SCREEN_COLUMNS		= 40
 SCREEN_LINES		= 23
-CONSOLE_PTR			= SCREEN_PTR
-DATA_PTR			= $55
-STRING_PTR			= $55
-
-MEMCPY_SRC			= $53
-MEMCPY_TGT			= $55
-MEMCPY_LEN			= $57
-
 SPRITE_PTR			= $7f8
-SPRITE_PREVIEW		= 0
+SPRITE_PREVIEW		= 0	; Number of the previewsprite
+SPRITE_CURSOR		= 1	; Number of the cursor sprite
 
-; Sprites used to highlight the color. For normal sprites
-; only COLOR0 is needed. For multicolor sprites we need
-; to select the two extra colors as well.
-SPRITE_COLOR0		= 1
-SPRITE_COLOR1		= 2
-SPRITE_COLOR2		= 3
+; Zeropage variables
+ZP_BASE				= $40
+ZP_BASE_LEN			= $0f
+CONSOLE_PTR			= SCREEN_PTR	; $e0
+DATA_PTR			= ZP_BASE+0
+STRING_PTR			= ZP_BASE+2
+FILE_FRAME			= ZP_BASE+4
+
+FARCALL_MEM			= $fc
+FARCALL_TMP			= $fd
+TMP_VAL				= ZP_BASE+6
+
+MEMCPY_SRC			= ZP_BASE+7
+MEMCPY_TGT			= ZP_BASE+9
+MEMCPY_LEN			= ZP_BASE+11
 
 ; Position of the color text.
 COLOR_TXT_ROW = 12
 COLOR_TXT_COLUMN = 27
 
 SPRITE_BASE			= $2000		; Sprite data pointer for first frame.
-MAIN_APP_BASE		= $5000		; Address where the main code is relocated to
-MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_BASE)/64)-1 ; The first frame
+SPRITE_USER_START	= SPRITE_BASE+2*64	; First two sprite blocks are reserved
+SPRITE_END			= $5000
+MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
+MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/64) ; The first frame
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+64
 
@@ -290,9 +339,9 @@ basicstub:
 	sei
 
 	; Save Zeropage
-	ldy #$0f
+	ldy #ZP_BASE_LEN
 @ZPSafe:
-	lda $50,y
+	lda ZP_BASE,y
 	sta ZPSafe,y
 	dey
 	bpl @ZPSafe
@@ -380,10 +429,10 @@ basicstub:
 	sta VIC_BG_COLOR0
 
 	; Restore the zeropage
-	ldy #$0f
+	ldy #ZP_BASE_LEN
 @ZPRestore:
 	lda ZPSafe,y
-	sta $50,y
+	sta ZP_BASE,y
 	dey
 	bpl @ZPRestore
 
@@ -439,8 +488,37 @@ basicstub:
 
 .endproc
 
+; FARCALL is used to call a function
+; across the bank boundaries.
+; A/X/Y are passed to the function
+; as provided by the caller.
+; The function to be called must be
+; stored in the FARCALL_PTR. 
+.proc FARCALL
+	sta FARCALL_TMP
+
+	lda #>(@SysRestore-1)
+	pha
+	lda #<(@SysRestore-1)
+	pha
+
+	lda FARCALL_MEM
+	sta MMU_PRE_CRC
+	sta MMU_LOAD_CRC
+	lda FARCALL_TMP
+
+	jmp (FARCALL_PTR)
+
+@SysRestore:
+
+	sta MMU_LOAD_CRD	; Switch back to our bank
+
+	rts
+.endproc
+
 ; This data has to be here so we can cleanly exit after
 ; moving the code.
+FARCALL_PTR: .word 0
 MMUConfig: .res $0b, 0
 ZPSafe: .res $10,0
 ScreenCol: .byte $00, $00
@@ -498,6 +576,17 @@ MAIN_APPLICATION = *
 	sta STRING_PTR
 	lda #>SpriteFrameTxt
 	sta STRING_PTR+1
+
+	lda #$00
+	sta BINVal+1
+	lda #MAX_FRAMES
+	sta BINVal
+	jsr BinToBCd16
+	lda #$01			; Skip the first digit otherwise it would be 4
+	tax					; We only need 3 digits
+	ldy #10
+	jsr BCDToString
+
 	ldy #26
 	jsr PrintStringZ
 
@@ -564,32 +653,44 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SpriteEditorKeyboardHandler
-	ldx #$02
+	ldx #$00
+
+	inx						; 01
+	lda LastKeyLine,x
+	cmp	#$01				; 3
+	beq IncSpriteColor3
+	cmp	#$20				; S
+	beq SaveFrames
+
+	inx						; 02
 	lda LastKeyLine,x
 	cmp #$80				; X
 	beq TogglePreviewX
 
-	ldx #$03
+	inx						; 03
 	lda LastKeyLine,x
 	cmp #$02				; Y
 	beq TogglePreviewY
 
-	ldx #$04
+	inx						; 04
 	lda LastKeyLine,x
 	cmp #$10				; M
 	beq ToggleMulticolor
 
-	ldx #$01
+	inx						; 05
 	lda LastKeyLine,x
-	cmp	#$01				; 3
-	beq IncSpriteColor3
+	cmp	#$04				; L
+	beq LoadFrames
 
-	ldx #$07
+	inx						; 06
+
+	inx						; 07
 	lda LastKeyLine,x
 	cmp	#$01				; 1
 	beq IncSpriteColor1
 	cmp	#$08				; 2
 	beq IncSpriteColor2
+
 
 	rts
 .endproc
@@ -649,6 +750,16 @@ MAIN_APPLICATION = *
 	lda SpriteColorValue+2
 	sta VIC_SPR_MCOLOR1
 	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
+	rts
+.endproc
+
+.proc LoadFrames
+	jsr LoadFile
+	rts
+.endproc
+
+.proc SaveFrames
+	jsr SaveFile
 	rts
 .endproc
 
@@ -1297,7 +1408,7 @@ MAIN_APPLICATION = *
 ; PARAMS:
 ; CONSOLE_PTR - Pointer to screen
 ; STRING_PTR - Pointer to string
-; X - offset to the startposition
+; Y - offset to the startposition
 ;
 ; RETURN:
 ; Y contains the number of characters printed
@@ -1375,6 +1486,322 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; https://codebase64.org/doku.php?id=base:more_hexadecimal_to_decimal_conversion
+.proc BinToBCd16
+	sed				; Switch to decimal mode
+	lda #0			; Ensure the result is clear
+	sta BCDVal+0
+	sta BCDVal+1
+	sta BCDVal+2
+	ldx #16			; The number of source bits
+
+@cnvbit:
+	asl BINVal+0		; Shift out one bit ...
+	rol BINVal+1
+	lda BCDVal+0		; ... and add into result
+	adc BCDVal+0
+	sta BCDVal+0
+	lda BCDVal+1		; propagating any carry ...
+	adc BCDVal+1
+	sta BCDVal+1
+	lda BCDVal+2		; ... thru whole result
+	adc BCDVal+2
+	sta BCDVal+2
+	dex				; And repeat for next bit
+	bne @cnvbit
+	cld				; Back to binary mode
+
+	rts
+
+.endproc
+
+; Pointer in STRING_PTR
+; Y - Offset in string
+; X - Offset in BCDVal
+; A - 1 = Skip first digit. This is needed when an uneven
+;		number of digits is desired, otherwise it will always be
+;		a multiple of 2 digits.
+;
+.proc BCDToString
+
+	SKIP_LEADING_ZERO = TMP_VAL
+
+	pha
+	lda #$00
+	sta SKIP_LEADING_ZERO
+
+	pla
+	cmp #$01
+	beq @SkipFirstDigit
+
+@Digit:
+	lda BCDVal,x
+
+	clc
+	lsr
+	lsr
+	lsr
+	lsr
+	clc
+	adc #'0'
+	cmp #'0'
+	beq @CheckZero0
+	sta SKIP_LEADING_ZERO	; No longer leading zeroes
+	jmp @Store0
+
+@CheckZero0:
+	bit SKIP_LEADING_ZERO
+	bne @Store0
+	lda #' '
+
+@Store0:
+	sta (STRING_PTR),y
+	iny
+
+@SkipFirstDigit:
+	lda BCDVal,x
+	and #$0f
+	clc
+	adc #'0'
+	cmp #'0'
+	beq @CheckZero1
+	sta SKIP_LEADING_ZERO	; No longer leading zeroes
+	jmp @Store1
+
+@CheckZero1:
+	bit SKIP_LEADING_ZERO
+	bne @Store1
+	lda #' '
+
+@Store1:
+	sta (STRING_PTR),y
+	iny
+
+	dex
+	bpl @Digit
+
+	; If the whole string was empty we write a 0.
+	dey
+	lda (STRING_PTR),y
+	cmp #' '
+	bne @Done
+	lda #'0'
+	sta (STRING_PTR),y
+
+@Done:
+	iny
+	rts
+
+.endproc
+
+.proc SaveFile
+
+	; TODO: DEBUG
+	lda #$00
+	sta FileFrameStart
+	lda #MAX_FRAMES
+	sta FileFrameEnd
+	; TODO: END DEBUG
+
+	lda #<OpenFileTxt
+	sta STRING_PTR
+	lda #>OpenFileTxt
+	sta STRING_PTR+1
+
+	lda #<(SCREEN_VIC+SCREEN_COLUMNS*23)
+	sta CONSOLE_PTR
+	lda #>(SCREEN_VIC+SCREEN_COLUMNS*23)
+	sta CONSOLE_PTR+1
+	ldy #$00
+
+	jsr PrintStringZ
+
+	; Enable kernel for our saving calls
+	lda #$00
+	sta FARCALL_MEM
+
+	; Prepare filename by appending 
+	; ',S,W' to open a SEQ file for writing
+	lda #','
+	sta FilenameMode
+	lda #'w'
+	sta FilenameMode+1
+
+	; File set parameters
+	lda #2				; Fileno
+	ldx DiskDrive		; Device
+	ldy #5				; secondary address
+	jsr SETFPAR
+
+	lda #0				; RAM bank to load file
+	ldx #0				; RAM bank of filename
+	jsr SETBANK
+
+	lda FilenameLen
+	ldx #<(Filename)
+	ldy #>(Filename)
+	jsr SETNAME
+
+	; Open the file
+	lda #<OPEN
+	sta FARCALL_PTR
+	lda #>OPEN
+	sta FARCALL_PTR+1
+	jsr FARCALL
+	lda STATUS
+	beq @C0
+	jmp @FileError
+
+@C0:
+	; Switch output to our file
+	lda #<CKOUT
+	sta FARCALL_PTR
+	lda #>CKOUT
+	sta FARCALL_PTR+1
+	ldx #2
+	jsr FARCALL
+	lda STATUS
+	beq @C1
+	jmp @FileError
+
+@C1:
+	; TODO: Calculate address of first frame
+	lda #<(SPRITE_USER_START)
+	sta DATA_PTR
+	lda #>(SPRITE_USER_START)
+	sta DATA_PTR
+
+	lda FileFrameStart
+	sta FILE_FRAME
+
+	; Write a single character to disk
+	lda #<BSOUT
+	sta FARCALL_PTR
+	lda #>BSOUT
+	sta FARCALL_PTR+1
+
+	lda #<WriteFrameTxt
+	sta STRING_PTR
+	lda #>WriteFrameTxt
+	sta STRING_PTR+1
+
+	; Frame end will never change
+	lda #$00
+	sta BINVal+1
+	lda FileFrameEnd
+	sta BINVal
+	jsr BinToBCd16
+	lda #$01
+	tax				; We only need 3 digits
+	ldy #19
+	jsr BCDToString
+
+	; Write a single sprite buffer
+@NextFrame:
+	jsr PrintWriteProgress
+	ldy #$00		; Current byte of the sprite
+	sty FilePosY
+
+@WriteFrame:
+	lda (DATA_PTR),y
+	inc FilePosY
+	jsr FARCALL
+	lda STATUS
+	bne @FileError
+	ldy FilePosY
+	cpy #64				; Size of a sprite block
+	bne	@WriteFrame
+
+	ldy FILE_FRAME
+	iny
+	sty FILE_FRAME
+	cpy FileFrameEnd
+	beq @Done
+
+	clc
+	lda DATA_PTR
+	adc #64
+	sta DATA_PTR
+	lda DATA_PTR+1
+	adc #$00
+	sta DATA_PTR+1
+	jmp @NextFrame
+
+@Done:
+	; Looks irritating, as if the last block wouldn't
+	; have been written, so we print it.
+	jsr PrintWriteProgress
+
+	; Clear output and reset to STDIN
+	; before closing
+	lda #<CLRCH
+	sta FARCALL_PTR
+	lda #>CLRCH
+	sta FARCALL_PTR+1
+	jsr FARCALL
+
+	; Well, it's evident. :)
+	lda #<CLOSE
+	sta FARCALL_PTR
+	lda #>CLOSE
+	sta FARCALL_PTR+1
+
+	lda #2
+	jsr FARCALL
+
+	lda #<DoneTxt
+	sta STRING_PTR
+	lda #>DoneTxt
+	sta STRING_PTR+1
+	ldy #$00
+	jsr PrintStringZ
+
+	rts
+
+@FileError:
+	rts
+.endproc
+
+.proc PrintWriteProgress
+
+	lda FILE_FRAME
+	sta BINVal
+	jsr BinToBCd16
+	lda #$01			; Skip the first digit otherwise it would be 4
+	tax					; We only need 3 digits
+	ldy #15
+	jsr BCDToString
+
+	ldy #$00
+	jsr PrintStringZ
+
+	rts
+.endproc
+
+.proc LoadFile
+
+	lda #0			; Fileno
+	ldx DiskDrive	; Device
+	ldy #0			; Load with address (1 = loadadress is in file)
+	jsr SETFPAR
+
+	lda FilenameLen
+	ldx #<(Filename)
+	ldy #>(Filename)
+	jsr SETNAME
+
+	lda #0			; RAM bank to load file
+	ldx #0			; RAM bank of filename
+	jsr SETBANK
+
+	lda #0			; LOAD
+	ldx #<SPRITE_BASE
+	ldy #>SPRITE_BASE
+	jsr LOAD
+
+	rts
+.endproc
+
 ; **********************************************
 .segment "DATA"
 
@@ -1397,6 +1824,17 @@ LastKeyLine: .res C128_KEY_LINES,$ff
 LastKeyPressed: .byte $ff
 LastKeyPressedLine: .byte $00
 
+Filename: .byte "sprites,s"
+FilenameMode: .byte 0,0
+FileFrameStart: .byte 1		; first frame to save
+FileFrameEnd: .byte 0		; last frame to save
+FilePosY: .byte 0			; Save the current sprite data across write call.
+
+FILENAME_LEN = *-Filename
+
+FilenameLen: .byte FILENAME_LEN
+DiskDrive: .byte 8
+
 ; Funtionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
 
@@ -1409,10 +1847,20 @@ LeftBottomRight: .res $03, $00
 SpriteFrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 1..N
+MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
 ColorTxt: .byte "COLOR :",0
 SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
 
+OpenFileTxt:	.byte "OPEN FILE: ",0
+WriteFrameTxt:	.byte "WRITING FRAME:   1/  1",0
+LoadFrameTxt:	.byte "READING FRAME:   1/  1",0
+DoneTxt:		.byte "DONE                  ",0
+
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
+
+; Space for converting a binary value to a decimal value
+BINVal: .word 12345
+BCDVal: .byte 0, 0, 0
 
 SpriteBuffer: 
 	.byte $00, $3c, $0f
