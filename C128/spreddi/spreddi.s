@@ -3,174 +3,11 @@
 ;
 .include "screenmap.inc"
 
-.include "c128.inc"
-
-COL_BLACK			= 0
-COL_WHITE			= 1
-COL_RED				= 2
-COL_CYAN			= 3
-COL_PURPLE			= 4
-COL_GREEN			= 5
-COL_BLUE			= 6
-COL_YELLOW			= 7
-COL_ORANGE			= 8
-COL_BROWN			= 9
-COL_LIGHT_RED		= 10
-COL_DARK_GREY		= 11
-COL_MEDIUM_GREY		= 12
-COL_LIGHT_GREEN		= 13
-COL_LIGHT_BLUE		= 14
-COL_LIGHT_GREY		= 15
-
-; C128 ROM functions
-; ******************
-
-; NMI - $0318 ($fa40) : Vector $fffa : p. 369
-; IRQ - $0314 ($fa65) : Vector $fffe : p. 369
-
-; Set bank
-;
-SETBANK				= $ff68
-
-; Set file parameter
-;
-; A - Fileno
-; X - Device number
-; Y - Secondary device number
-SETFPAR				= $ffba
-
-; Set filename
-;
-; A - Namelen
-; X - NameAdrLo
-; Y - NameAdrHi
-SETNAME				= $ffbd
-
-; Load File
-;
-; X - Lo Start
-; Y - Hi Start
-LOAD				= $ffd5
-
-; Save File
-;
-; A - Zeropage address of the startadress
-; (A) - Lo Start
-; (A+1) - Hi Start
-; X - Lo Endadress
-; Y - Hi Endadress
-SAVE				= $ffd8
-
-; Open logical file
-;
-; $b8 - logical file number
-; $b9 - secondary address
-; $b7 - filename length
-; $bb/$bc - filename address
-; $c7 - bank filename
-; These values can also be set using
-; SETPAR, SETNAM and SETBANK
-OPEN				= $ffc0
-
-; Close logical file
-;
-; A - logical filenumber
-CLOSE				= $ffc3
-
-; Set input filenumber
-;
-; A - logical filenumber
-CHKIN				= $ffc6
-
-; Set output filenumber
-;
-; A - logical filenumber
-CKOUT				= $ffc9
-
-; Clear channel
-;
-; -
-CLRCH				= $ffcc
-
-; Read from current input
-;
-; -
-; Returns the character in A.
-BSIN				= $ffcf
-
-; Write to current output
-;
-; A - byte to write
-BSOUT				= $ffd2
-
-; To be added to cc65
-INP_NDX				= $D0
-VIC_COLOR_RAM		= $d800
-
-; MMU_CR = Configuration register
-; ===============================
-; Bit 7 : RAM Bank 2/3 Unused
-; Bit 6 : 1 = RAM bank 1, 0 = RAM bank 0
-; Bit 5/4 : C000 - FFFF
-;           11 = RAM (Bits 7/6)
-;           10 = External function ROM
-;           01 = Internal function ROM
-;           00 = System ROM Kernal
-; Bit 3/2 : 8000 - BFFFF
-;           11 = RAM (Bits 7/6)
-;           10 = External function ROM
-;           01 = Internal function ROM
-;           00 = System ROM BASIC
-; Bit 1   : 4000 - 7FFFF
-;           1 = RAM (Bits 7/6)
-;           0 = System ROM BASIC
-; Bit 0   : D000 - DFFFF
-;           1 = RAM / ROM (Bits 5/4)
-;           0 = IO
-MMU_CR_IO			= $d500 ; Active configuration
-
-; The preconfiguration registers can be written to
-; with a desired RAM configuration, but will not 
-; change the active configuration. To activate it
-; the correspoding MMU_LOAD_CRx register has to be written
-; to. It will only then copy its config to MMU_CR.
-MMU_PRE_CRA			= $d501
-MMU_PRE_CRB			= $d502
-MMU_PRE_CRC			= $d503
-MMU_PRE_CRD			= $d504
-
-MMU_MODE_CR			= $d505
-MMU_RAM_CR			= $d506
-MMU_P0_LO			= $d507
-MMU_P0_HI			= $d508
-MMU_P1_LO			= $d509
-MMU_P1_HI			= $d50a
-MMU_VERSION_REG		= $d50b
-
-; Load configuration registers. These
-; are always available, no matter what
-; config has been selected. They can be
-; read. Writing to them doesn't change
-; them, instead it will load the
-; corresponding value from MMU_PRE_CRx
-; instead, so the value to be written
-; doesn't matter.
-MMU_LOAD_CR			= $ff00
-MMU_LOAD_CRA		= $ff01
-MMU_LOAD_CRB		= $ff02
-MMU_LOAD_CRC		= $ff03
-MMU_LOAD_CRD		= $ff04
-
-; Disable sprite/SID/lightpen processing during
-; regular C128 IRQ processing.
-; If set to 0 IRQ is not handling it. If set to 1
-; IRQ is currently handling it, which will disable
-; further processing.
-SPRINT					= $12fd
+.include "c128_system.inc"
+;.include "c128_scankeys.inc"
 
 ; Sprite editor constants
 ; =======================
-C128_KEY_LINES 		= 11
 SCREEN_VIC			= $0400
 SCREEN_COLUMNS		= 40
 SCREEN_LINES		= 23
@@ -185,14 +22,23 @@ CONSOLE_PTR			= SCREEN_PTR	; $e0
 DATA_PTR			= ZP_BASE+0
 STRING_PTR			= ZP_BASE+2
 FILE_FRAME			= ZP_BASE+4
+LINE_OFFSET			= ZP_BASE+5
 
 FARCALL_MEM			= $fc
 FARCALL_TMP			= $fd
-TMP_VAL				= ZP_BASE+6
 
-MEMCPY_SRC			= ZP_BASE+7
-MEMCPY_TGT			= ZP_BASE+9
-MEMCPY_LEN			= ZP_BASE+11
+MEMCPY_SRC			= ZP_BASE+6
+MEMCPY_TGT			= ZP_BASE+8
+MEMCPY_LEN			= ZP_BASE+10
+
+TMP_VAL_0			= ZP_BASE+12
+TMP_VAL_1			= ZP_BASE+13
+
+; Library variables
+SKIP_LEADING_ZERO	= TMP_VAL_0
+STRING_POS			= TMP_VAL_0
+STR_CHARINDEX		= TMP_VAL_1
+SCANKEY_TMP			= TMP_VAL_0
 
 ; Position of the color text.
 COLOR_TXT_ROW = 12
@@ -581,7 +427,7 @@ MAIN_APPLICATION = *
 	sta BINVal+1
 	lda #MAX_FRAMES
 	sta BINVal
-	jsr BinToBCd16
+	jsr BinToBCD16
 	lda #$01			; Skip the first digit otherwise it would be 4
 	tax					; We only need 3 digits
 	ldy #10
@@ -966,7 +812,6 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-
 ; ******************************************
 ; Character Editor
 ; ******************************************
@@ -1218,16 +1063,13 @@ MAIN_APPLICATION = *
 ; Y - Number of columns 1 .. 40
 ; A - character to use
 ; CONSOLE_PTR - Pointer to top left corner.
-; $55 - Line offset
-;
-; Locals:
-; $56/$57 - Helper
+; LINE_OFFSET - Line offset
 ;
 .proc FillRectangle
 
 	dey
-	sty $56
-	sta $57
+	sty TMP_VAL_0
+	sta TMP_VAL_1
 
 @nextLine:
 	sta (CONSOLE_PTR),y
@@ -1237,92 +1079,18 @@ MAIN_APPLICATION = *
 	; Advance to next Line
 	clc
 	lda CONSOLE_PTR
-	adc $55
+	adc LINE_OFFSET
 	sta CONSOLE_PTR
 	lda CONSOLE_PTR+1
 	adc #0
 	sta CONSOLE_PTR+1
 
-	ldy $56
-	lda $57
+	ldy TMP_VAL_0
+	lda TMP_VAL_1
 
 	dex
 	bne @nextLine
 
-	rts
-.endproc
-
-; AC - Character to be printed
-; Y - Offset to screen position
-; Pointer to screen location in CONSOLE_PTR
-.proc PrintHex
-
-	ldx #$02
-	pha
-
-	lsr
-	lsr
-	lsr
-	lsr
-
-@PrintChar:
-	and #$0f
-
-	cmp #$0a
-	bcs @Alpha
-	adc #$3a
-
-@Alpha:
-	sbc #$09
-	sta (CONSOLE_PTR),y
-	pla	
-	iny
-	dex
-	bne @PrintChar
-	pha
-
-	rts
-.endproc
-
-; AC - Character to be printed
-; Y - Offset to screen position
-; Pointer to screen location in CONSOLE_PTR
-.proc PrintBinary
-	ldx #$07
-
-@Loop:
-	lsr
-	pha
-	bcs @Print1
-	lda #$30
-	bne @Print
-
-@Print1:
-	lda #$31
-
-@Print:
-	sta (CONSOLE_PTR),y
-	pla
-	iny
-	dex
-	bpl @Loop
-
-	rts
-.endproc
-
-; Wait until no keys are pressed
-.proc WaitKeyboardRelease
-	jsr ScanKeys
-	lda KeyPressed
-	bne WaitKeyboardRelease
-	rts
-.endproc
-
-; Wait until a key is pressed
-.proc WaitKeyboardPressed
-	jsr ScanKeys
-	lda KeyPressed
-	beq WaitKeyboardPressed
 	rts
 .endproc
 
@@ -1335,119 +1103,6 @@ MAIN_APPLICATION = *
 	dey
 	bpl @Loop
 
-	rts
-.endproc
-
-; Read the keyboard 11x8 matrix. For each line the current
-; state is stored.
-; If any keys are pressed Y contains #$01
-.proc ScanKeys
-
-	ldy #$ff			; No Key pressed
-	sty KeyPressedLine
-	iny
-	sty KeyPressed
-
-	; First scan the regular C64 8x8 matrix
-	ldx #$07
-
-	sei
-	sta VIC_KBD_128	; Disable the extra lines of C128
-	lda #%01111111
-
-@NextKey:
-	sta $50
-	sta CIA1_PRA	; Port A to low
-	lda CIA1_PRB	; Read key
-	eor #$ff		; Flip bits to make them highactive
-	sta KeyLine,x	; Store key per matrixline
-	beq @NextLine
-	sta KeyPressed
-	stx KeyPressedLine
-	ldy #$01		; Key pressed flag
-
-@NextLine:
-	lda $50
-	sec
-	ror
-	dex
-	bpl @NextKey
-
-	; Now scan the 3 extra lines for the extended
-	; C128 keys with their own set of lines via VIC.
-	ldx #$02
-	lda #$ff
-	sta CIA1_PRA	; Disable the regular lines
-	lda #%11111011
-
-@NextXKey:
-	sta $50
-	sta VIC_KBD_128	; VIC port to low
-	lda CIA1_PRB	; Read key
-	eor #$ff		; Flip bits to make them highactive
-	sta KeyLine+8,x	; Store key per matrixline
-	beq @NextXLine
-	sta KeyPressed
-	stx KeyPressedLine
-	ldy #$01		; Key pressed flag
-
-@NextXLine:
-	lda $50
-	sec
-	ror
-	dex
-	bpl @NextXKey
-
-@Done:
-	cli
-
-	rts
-.endproc
-
-; Print a zeroterminated String to the screen.
-; PARAMS:
-; CONSOLE_PTR - Pointer to screen
-; STRING_PTR - Pointer to string
-; Y - offset to the startposition
-;
-; RETURN:
-; Y contains the number of characters printed
-;
-; LOCALS:
-; $57 - Remember the position in the string
-; $58 - Remember the position on screen
-;
-; Both pointers will not be modified. The string can
-; not be longer then 254+1 characters 
-; Example: Start can be set to $0400 and Y
-; 		to 10 to print the string in the middle
-;
-.proc PrintStringZ
-
-	STRING_POS			= $57
-	STR_CHARINDEX		= $58
-
-	sty STRING_POS
-	ldy #$00
-
-@Loop:
-	lda (STRING_PTR),y
-	bne @Print
-	rts
-
-@Print:
-	iny
-	sty STR_CHARINDEX
-	ldy STRING_POS
-	sta (CONSOLE_PTR),y
-	iny
-	sty STRING_POS
-	ldy STR_CHARINDEX
-	jmp @Loop
-
-.endproc
-
-.proc DetectSystem
 	rts
 .endproc
 
@@ -1484,114 +1139,6 @@ MAIN_APPLICATION = *
 	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*13)+2
 
 	rts
-.endproc
-
-; https://codebase64.org/doku.php?id=base:more_hexadecimal_to_decimal_conversion
-.proc BinToBCd16
-	sed				; Switch to decimal mode
-	lda #0			; Ensure the result is clear
-	sta BCDVal+0
-	sta BCDVal+1
-	sta BCDVal+2
-	ldx #16			; The number of source bits
-
-@cnvbit:
-	asl BINVal+0		; Shift out one bit ...
-	rol BINVal+1
-	lda BCDVal+0		; ... and add into result
-	adc BCDVal+0
-	sta BCDVal+0
-	lda BCDVal+1		; propagating any carry ...
-	adc BCDVal+1
-	sta BCDVal+1
-	lda BCDVal+2		; ... thru whole result
-	adc BCDVal+2
-	sta BCDVal+2
-	dex				; And repeat for next bit
-	bne @cnvbit
-	cld				; Back to binary mode
-
-	rts
-
-.endproc
-
-; Pointer in STRING_PTR
-; Y - Offset in string
-; X - Offset in BCDVal
-; A - 1 = Skip first digit. This is needed when an uneven
-;		number of digits is desired, otherwise it will always be
-;		a multiple of 2 digits.
-;
-.proc BCDToString
-
-	SKIP_LEADING_ZERO = TMP_VAL
-
-	pha
-	lda #$00
-	sta SKIP_LEADING_ZERO
-
-	pla
-	cmp #$01
-	beq @SkipFirstDigit
-
-@Digit:
-	lda BCDVal,x
-
-	clc
-	lsr
-	lsr
-	lsr
-	lsr
-	clc
-	adc #'0'
-	cmp #'0'
-	beq @CheckZero0
-	sta SKIP_LEADING_ZERO	; No longer leading zeroes
-	jmp @Store0
-
-@CheckZero0:
-	bit SKIP_LEADING_ZERO
-	bne @Store0
-	lda #' '
-
-@Store0:
-	sta (STRING_PTR),y
-	iny
-
-@SkipFirstDigit:
-	lda BCDVal,x
-	and #$0f
-	clc
-	adc #'0'
-	cmp #'0'
-	beq @CheckZero1
-	sta SKIP_LEADING_ZERO	; No longer leading zeroes
-	jmp @Store1
-
-@CheckZero1:
-	bit SKIP_LEADING_ZERO
-	bne @Store1
-	lda #' '
-
-@Store1:
-	sta (STRING_PTR),y
-	iny
-
-	dex
-	bpl @Digit
-
-	; If the whole string was empty we write a 0.
-	dey
-	lda (STRING_PTR),y
-	cmp #' '
-	bne @Done
-	lda #'0'
-	sta (STRING_PTR),y
-
-@Done:
-	iny
-	rts
-
 .endproc
 
 .proc SaveFile
@@ -1690,7 +1237,7 @@ MAIN_APPLICATION = *
 	sta BINVal+1
 	lda FileFrameEnd
 	sta BINVal
-	jsr BinToBCd16
+	jsr BinToBCD16
 	lda #$01
 	tax				; We only need 3 digits
 	ldy #19
@@ -1766,7 +1313,7 @@ MAIN_APPLICATION = *
 
 	lda FILE_FRAME
 	sta BINVal
-	jsr BinToBCd16
+	jsr BinToBCD16
 	lda #$01			; Skip the first digit otherwise it would be 4
 	tax					; We only need 3 digits
 	ldy #15
@@ -1802,6 +1349,18 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Library includes
+.include "kbd/scankeys.s"
+.include "kbd/key_pressed.s"
+.include "kbd/key_released.s"
+
+.include "math/bintobcd.s"
+.include "math/mult16x16.s"
+
+.include "string/bcdtostring.s"
+.include "string/printstringz.s"
+.include "string/printhex.s"
+
 ; **********************************************
 .segment "DATA"
 
@@ -1816,14 +1375,11 @@ EditCurChar: .byte 0
 EditCurColumns: .byte 0
 
 ; Keyboard handling
-KeyLine: .res C128_KEY_LINES,$ff
-KeyPressed: .byte $ff
-KeyPressedLine: .byte $00
-
 LastKeyLine: .res C128_KEY_LINES,$ff
 LastKeyPressed: .byte $ff
 LastKeyPressedLine: .byte $00
 
+; Saving/Loading
 Filename: .byte "sprites,s"
 FilenameMode: .byte 0,0
 FileFrameStart: .byte 1		; first frame to save
@@ -1857,10 +1413,6 @@ LoadFrameTxt:	.byte "READING FRAME:   1/  1",0
 DoneTxt:		.byte "DONE                  ",0
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
-
-; Space for converting a binary value to a decimal value
-BINVal: .word 12345
-BCDVal: .byte 0, 0, 0
 
 SpriteBuffer: 
 	.byte $00, $3c, $0f
