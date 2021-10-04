@@ -33,6 +33,6 @@
 .segment "DATA"
 
 ; 16x16 multiplication
-Multiplier:		.byte 0, 0
-Multiplicand:	.byte 0, 0
-Product:		.byte 0, 0, 0, 0 
+Multiplicand:	.byte 0, 0			; (A)
+Multiplier:		.byte 0, 0			; * (B)
+Product:		.byte 0, 0, 0, 0	; = (P)

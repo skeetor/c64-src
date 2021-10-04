@@ -6,7 +6,7 @@ if not exist "bin" mkdir bin
 set SYSTEM_CONFIG="c128-asm.cfg"
 set SYSTEM_DEFINE=C128
 
-set C1541_PATH=f:\Programme\C64\WinVICE-3.1-x64
+set C1541_PATH=E:\Programme\VICE-Win-3.1-x64
 set PROJECT_NAME=spreddi
 set DISK_NAME=%PROJECT_NAME%
 

@@ -44,13 +44,14 @@ SCANKEY_TMP			= TMP_VAL_0
 COLOR_TXT_ROW = 12
 COLOR_TXT_COLUMN = 27
 
+SPRITE_BUFFER_LEN	= 64
 SPRITE_BASE			= $2000		; Sprite data pointer for first frame.
-SPRITE_USER_START	= SPRITE_BASE+2*64	; First two sprite blocks are reserved
+SPRITE_USER_START	= SPRITE_BASE+2*SPRITE_BUFFER_LEN	; First two sprite blocks are reserved
 SPRITE_END			= $5000
 MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
-MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/64) ; The first frame
+MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The first frame
 								; is used for our cursor sprite, so the first
-								; user sprite will start at SPRITE_BASE+64
+								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
 
 SPRITE_COLOR		= VIC_SPR0_COLOR
 SPRITE_EXP_X		= VIC_SPR_EXP_X
@@ -100,7 +101,14 @@ basicstub:
 .word 0 ;empty line == end pf BASIC
 
 .proc MainEntry
+
 	jsr Setup
+
+	; Sprite size multiplier.
+	; We can set this already, since we never
+	; need a different multiplier.
+	lda #SPRITE_BUFFER_LEN
+	sta Multiplier
 
 	lda #$00
 	sta VIC_BORDERCOLOR
@@ -121,13 +129,16 @@ basicstub:
 	jsr CreateDebugSprite
 
 	; Enable preview sprite
-	lda #(SPRITE_BASE+SPRITE_PREVIEW*64)/64			; Sprite data address
+	lda #(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)/SPRITE_BUFFER_LEN			; Sprite data address
 	sta SPRITE_PTR+SPRITE_PREVIEW
 	lda #(1 << SPRITE_PREVIEW)
 	sta VIC_SPR_ENA		; Enable sprite 0
 	lda SpriteColorValue
 	sta SPRITE_COLOR+SPRITE_PREVIEW
 
+	lda #$00
+	sta CurFrame
+	sta MaxFrame
 	jsr SpriteEditor
 
 @KeyLoop:
@@ -181,6 +192,15 @@ basicstub:
 	; Switch to default C128 config
 	lda #$00
 	sta MMU_CR_IO
+
+	sta Multiplicand
+	sta Multiplicand+1
+	sta Multiplier
+	sta Multiplier+1
+	sta Product
+	sta Product+1
+	sta Product+2
+	sta Product+3
 
 	sei
 
@@ -371,9 +391,10 @@ ScreenCol: .byte $00, $00
 RelocationFlag: .byte $00
 
 ; Address of the entry stub. This is only the initialization
-; part which will move the main application up to $3000 so
-; we can use the space of $2000-2ffff for our 64 sprite frames.
-; If more frames are needed, we could move it further app
+; part which will move the main application up to MAIN_APP_BASE
+; so  we can use the space between $2000 and MAIN_APP_BASE
+; for our sprite frames.
+; If more frames are needed, we could move it further up
 ; by increasing MAIN_APP_BASE.
 MAIN_APPLICATION_LOAD = *
 
@@ -385,22 +406,19 @@ MAIN_APPLICATION = *
 ; ******************************************
 .proc SpriteEditor
 
-	; Editormatrix screen position
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR+1
-
-	lda #<(SPRITE_BASE+(SPRITE_PREVIEW*64))
-	sta DATA_PTR
-	lda #>(SPRITE_BASE+(SPRITE_PREVIEW*64))
-	sta DATA_PTR+1
-
+	; Set the dimension of the sprite editing matrix
 	lda #3
 	sta EditColumnBytes
 	lda #21
 	sta EditLines
-	jsr DrawBitMatrix
+
+	jsr UpdateFrame
+
+	;lda #<(SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN))
+	;sta DATA_PTR
+	;lda #>(SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN))
+	;sta DATA_PTR+1
+	;jsr DrawBitMatrix
 
 	lda #CHAR_SPLIT_TOP
 	sta SCREEN_VIC+24+1
@@ -639,7 +657,7 @@ MAIN_APPLICATION = *
 	lda #>PREVIEW_POS_BIG
 	sta CONSOLE_PTR+1
 	lda #SCREEN_COLUMNS
-	sta $55
+	sta LINE_OFFSET
 	lda #' '
 	jsr FillRectangle
 
@@ -818,12 +836,6 @@ MAIN_APPLICATION = *
 
 .proc CharEditor
 
-	; Editormatrix screen position
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR+1
-
 	lda #<SpriteBuffer
 	sta DATA_PTR
 	lda #>SpriteBuffer
@@ -856,7 +868,7 @@ MAIN_APPLICATION = *
 	lda #>SCREEN_VIC
 	sta CONSOLE_PTR+1
 	lda #SCREEN_COLUMNS
-	sta $55
+	sta LINE_OFFSET
 
 	lda #' '
 	ldy #SCREEN_COLUMNS
@@ -872,7 +884,7 @@ MAIN_APPLICATION = *
 ;
 ; ZP Usage:
 ; CONSOLE_PTR - pointer to screen
-; $55 - line counter
+; TMP_VAL_0 - line counter
 .proc DrawScreenborder
 
 	; Draw the corners
@@ -905,7 +917,7 @@ MAIN_APPLICATION = *
 
 	; Number of lines - 2 for Border. The last line will be used for character preview
 	lda #SCREEN_LINES-2
-	sta $55
+	sta TMP_VAL_0
 
 	ldx #CHAR_VERTICAL
 
@@ -918,7 +930,7 @@ MAIN_APPLICATION = *
 
 	jsr NextLine
 
-	dec $55
+	dec TMP_VAL_0
 	bne @VLoop
 
     rts
@@ -984,9 +996,15 @@ MAIN_APPLICATION = *
 ;
 ; Locals:
 ; EditCurChar - Current datavalue
-; $57 - Temporary
+; TMP_VAL_0 - Temporary
 
 .proc DrawBitMatrix
+
+	; Editormatrix screen position
+	lda #<(SCREEN_VIC+SCREEN_COLUMNS+1)
+	sta CONSOLE_PTR
+	lda #>(SCREEN_VIC+SCREEN_COLUMNS+1)
+	sta CONSOLE_PTR+1
 
 @nextLine:
 	; Reset the columns
@@ -995,10 +1013,10 @@ MAIN_APPLICATION = *
 	ldy #0
 
 @nextColumn:
-	sty $57
+	sty TMP_VAL_0
 	ldy #0
 	lda (DATA_PTR),y
-	ldy $57
+	ldy TMP_VAL_0
 	sta EditCurChar
 
 	; next byte
@@ -1056,6 +1074,68 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Copy the current frame to the preview sprite buffer
+; and update the editing matrix.
+.proc UpdateFrame
+
+	lda CurFrame
+	jsr CalcFramePointer
+
+	lda FramePtr
+	sta MEMCPY_SRC
+	lda FramePtr+1
+	sta MEMCPY_SRC+1
+
+	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta MEMCPY_TGT
+	sta DATA_PTR
+	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta MEMCPY_TGT+1
+	sta DATA_PTR+1
+	jsr CopyFrame
+
+	jsr DrawBitMatrix
+
+	rts
+.endproc
+
+; Copy a sprite frame from MEMCPY_SRC to MEMCPY_TGT.
+.proc CopyFrame
+	ldy #SPRITE_BUFFER_LEN-1
+
+@Loop:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @Loop
+
+	rts
+.endproc
+
+; Calculate the sprite buffer address for the specified frame.
+; Result is stored in FramePtr.
+;
+; A - framenumber 0..MAX_FRAMES-1
+;
+.proc CalcFramePointer
+
+	sta Multiplicand
+	lda #$00
+	sta Multiplicand+1
+	jsr Mult16x16
+
+	clc
+	lda #<(SPRITE_USER_START)
+	adc Product
+	sta FramePtr
+	lda #>(SPRITE_USER_START)
+	adc Product+1
+	sta FramePtr+1
+
+	rts
+
+.endproc
+
 ; Fill a memory rectangle with the specified value
 ;
 ; PARAMS:
@@ -1106,37 +1186,41 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Create a sprite shape which makes the border edges better visible.
 .proc CreateDebugSprite
+	;DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	DEBUG_SPRITE_PTR = SPRITE_USER_START+(0*SPRITE_BUFFER_LEN)
+
 	ldy #3*21
 	lda #255
 
 @InitSprite:
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)-1,y
+	sta DEBUG_SPRITE_PTR-1,y
 	dey
 	bne @InitSprite
 
 	lda #0
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+1
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*20)+1
+	sta DEBUG_SPRITE_PTR+1
+	sta DEBUG_SPRITE_PTR+(3*20)+1
 
 	lda #$7f
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*7)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*8)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*9)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*10)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*11)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*12)
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*13)
+	sta DEBUG_SPRITE_PTR+(3*7)
+	sta DEBUG_SPRITE_PTR+(3*8)
+	sta DEBUG_SPRITE_PTR+(3*9)
+	sta DEBUG_SPRITE_PTR+(3*10)
+	sta DEBUG_SPRITE_PTR+(3*11)
+	sta DEBUG_SPRITE_PTR+(3*12)
+	sta DEBUG_SPRITE_PTR+(3*13)
 
 	lda #$fe
 
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*7)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*8)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*9)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*10)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*11)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*12)+2
-	sta SPRITE_BASE+(SPRITE_PREVIEW*64)+(3*13)+2
+	sta DEBUG_SPRITE_PTR+(3*7)+2
+	sta DEBUG_SPRITE_PTR+(3*8)+2
+	sta DEBUG_SPRITE_PTR+(3*9)+2
+	sta DEBUG_SPRITE_PTR+(3*10)+2
+	sta DEBUG_SPRITE_PTR+(3*11)+2
+	sta DEBUG_SPRITE_PTR+(3*12)+2
+	sta DEBUG_SPRITE_PTR+(3*13)+2
 
 	rts
 .endproc
@@ -1212,11 +1296,15 @@ MAIN_APPLICATION = *
 	jmp @FileError
 
 @C1:
-	; TODO: Calculate address of first frame
-	lda #<(SPRITE_USER_START)
+	; Calculate address of first frame where we want
+	; to save from
+	lda FileFrameStart
+	jsr CalcFramePointer
+
+	lda FramePtr
 	sta DATA_PTR
-	lda #>(SPRITE_USER_START)
-	sta DATA_PTR
+	lda FramePtr+1
+	sta DATA_PTR+1
 
 	lda FileFrameStart
 	sta FILE_FRAME
@@ -1256,7 +1344,7 @@ MAIN_APPLICATION = *
 	lda STATUS
 	bne @FileError
 	ldy FilePosY
-	cpy #64				; Size of a sprite block
+	cpy #SPRITE_BUFFER_LEN				; Size of a sprite block
 	bne	@WriteFrame
 
 	ldy FILE_FRAME
@@ -1267,7 +1355,7 @@ MAIN_APPLICATION = *
 
 	clc
 	lda DATA_PTR
-	adc #64
+	adc #SPRITE_BUFFER_LEN
 	sta DATA_PTR
 	lda DATA_PTR+1
 	adc #$00
@@ -1400,6 +1488,7 @@ EditorKeyHandler: .word 0
 ; unexpanded Y size on the bottom line.
 LeftBottomRight: .res $03, $00
 
+FramePtr: .word 0	; Address for current frame pointer
 SpriteFrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 1..N
@@ -1414,6 +1503,7 @@ DoneTxt:		.byte "DONE                  ",0
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
+; TODO: Just for early debugging. Can be removed
 SpriteBuffer: 
 	.byte $00, $3c, $0f
 	.byte $01, $3c, $0f

@@ -18,6 +18,7 @@ M - Multicolor<br>
 *N - New Frame (Append or insert)<br>
 *P - Paste Frame (copy from frame N)<br>
 *S - Save buffer<br>
+*U - Undo (restore the current frame)
 X - Toggle Width<br>
 Y - Toggle Heigth<br>
 *SPC - Toggle bit<br>
