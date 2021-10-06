@@ -1,6 +1,9 @@
 ; Scan keyboard for C128 matrix
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
+; If the function is not to be called during an IRQ
+; but from regular code, then define SCANKEYS_BLOCK_IRQ.
+;
 .segment "CODE"
 
 ; Read the keyboard 11x8 matrix. For each line the current
@@ -16,7 +19,9 @@
 	; First scan the regular C64 8x8 matrix
 	ldx #$07
 
+.ifdef SCANKEYS_BLOCK_IRQ
 	sei
+.endif
 	sta VIC_KBD_128	; Disable the extra lines of C128
 	lda #%01111111
 
@@ -64,7 +69,9 @@
 	bpl @NextXKey
 
 @Done:
+.ifdef SCANKEYS_BLOCK_IRQ
 	cli
+.endif
 
 	rts
 .endproc

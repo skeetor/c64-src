@@ -6,15 +6,6 @@
 .include "c128_system.inc"
 ;.include "c128_scankeys.inc"
 
-; Sprite editor constants
-; =======================
-SCREEN_VIC			= $0400
-SCREEN_COLUMNS		= 40
-SCREEN_LINES		= 23
-SPRITE_PTR			= $7f8
-SPRITE_PREVIEW		= 0	; Number of the previewsprite
-SPRITE_CURSOR		= 1	; Number of the cursor sprite
-
 ; Zeropage variables
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
@@ -33,6 +24,8 @@ MEMCPY_LEN			= ZP_BASE+10
 
 TMP_VAL_0			= ZP_BASE+12
 TMP_VAL_1			= ZP_BASE+13
+TMP_VAL_2			= ZP_BASE+14
+TMP_VAL_3			= ZP_BASE+15
 
 ; Library variables
 SKIP_LEADING_ZERO	= TMP_VAL_0
@@ -43,6 +36,15 @@ SCANKEY_TMP			= TMP_VAL_0
 ; Position of the color text.
 COLOR_TXT_ROW = 12
 COLOR_TXT_COLUMN = 27
+
+; Sprite editor constants
+; =======================
+SCREEN_VIC			= $0400
+SCREEN_COLUMNS		= 40
+SCREEN_LINES		= 23
+SPRITE_PTR			= $7f8
+SPRITE_PREVIEW		= 0	; Number of the previewsprite
+SPRITE_CURSOR		= 1	; Number of the cursor sprite
 
 SPRITE_BUFFER_LEN	= 64
 SPRITE_BASE			= $2000		; Sprite data pointer for first frame.
@@ -151,7 +153,7 @@ basicstub:
 
 	jsr SaveKeys
 
-	ldy #$06			; Check the first 6 Matrixlines
+	ldy #$06			; Check the first 7 Matrixlines
 	ldx #$00
 
 @CheckRUNSTOP:
@@ -414,12 +416,6 @@ MAIN_APPLICATION = *
 
 	jsr UpdateFrame
 
-	;lda #<(SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN))
-	;sta DATA_PTR
-	;lda #>(SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN))
-	;sta DATA_PTR+1
-	;jsr DrawBitMatrix
-
 	lda #CHAR_SPLIT_TOP
 	sta SCREEN_VIC+24+1
 
@@ -436,23 +432,24 @@ MAIN_APPLICATION = *
 	lda #>(SCREEN_VIC+SCREEN_COLUMNS*1)
 	sta CONSOLE_PTR+1
 
-	lda #<SpriteFrameTxt
+	lda #<FrameTxt
 	sta STRING_PTR
-	lda #>SpriteFrameTxt
+	lda #>FrameTxt
 	sta STRING_PTR+1
-
-	lda #$00
-	sta BINVal+1
-	lda #MAX_FRAMES
-	sta BINVal
-	jsr BinToBCD16
-	lda #$01			; Skip the first digit otherwise it would be 4
-	tax					; We only need 3 digits
-	ldy #10
-	jsr BCDToString
-
 	ldy #26
 	jsr PrintStringZ
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR+1
+	sta STRING_PTR+1
+	ldx CurFrame
+	inx
+	txa
+	ldx MaxFrame
+	inx
+	ldy #26+6
+	jsr PrintFrameCounter
 
 	; Print the max frame text
 	lda #<(SCREEN_VIC+SCREEN_COLUMNS*21)
@@ -522,15 +519,24 @@ MAIN_APPLICATION = *
 	inx						; 01
 	lda LastKeyLine,x
 	cmp	#$01				; 3
-	beq IncSpriteColor3
-	cmp	#$20				; S
-	beq SaveFrames
+	bne @C4
+	jmp IncSpriteColor3
 
+@C4:
+	cmp	#$20				; S
+	bne @C0
+	jmp SaveSprites
+
+@C0:
 	inx						; 02
 	lda LastKeyLine,x
 	cmp #$80				; X
 	beq TogglePreviewX
+	cmp #$10				; C
+	bne @C2
+	jmp ClearSprite
 
+@C2:
 	inx						; 03
 	lda LastKeyLine,x
 	cmp #$02				; Y
@@ -538,14 +544,21 @@ MAIN_APPLICATION = *
 
 	inx						; 04
 	lda LastKeyLine,x
+	cmp #$02				; I
+	bne @C3
+	jmp InvertSprite
+
+@C3:
 	cmp #$10				; M
 	beq ToggleMulticolor
 
 	inx						; 05
 	lda LastKeyLine,x
 	cmp	#$04				; L
-	beq LoadFrames
+	bne @C1
+	jmp LoadSprites
 
+@C1:
 	inx						; 06
 
 	inx						; 07
@@ -554,7 +567,6 @@ MAIN_APPLICATION = *
 	beq IncSpriteColor1
 	cmp	#$08				; 2
 	beq IncSpriteColor2
-
 
 	rts
 .endproc
@@ -614,16 +626,6 @@ MAIN_APPLICATION = *
 	lda SpriteColorValue+2
 	sta VIC_SPR_MCOLOR1
 	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
-	rts
-.endproc
-
-.proc LoadFrames
-	jsr LoadFile
-	rts
-.endproc
-
-.proc SaveFrames
-	jsr SaveFile
 	rts
 .endproc
 
@@ -989,12 +991,12 @@ MAIN_APPLICATION = *
 ; caller must adjust the edges if appropriate.
 ;
 ; PARAMS:
-; CONSOLE_PTR - pointer to the screen position
 ; DATA_PTR - pointer to the data
 ; EditColumnBytes - number of columnbytes (1 = 8 columns, 2 = 16 columns, etc.)
 ; EditLines - number of lines
 ;
 ; Locals:
+; CONSOLE_PTR - pointer to the screen position
 ; EditCurChar - Current datavalue
 ; TMP_VAL_0 - Temporary
 
@@ -1005,6 +1007,9 @@ MAIN_APPLICATION = *
 	sta CONSOLE_PTR
 	lda #>(SCREEN_VIC+SCREEN_COLUMNS+1)
 	sta CONSOLE_PTR+1
+
+	lda EditLines
+	sta EditCurLine
 
 @nextLine:
 	; Reset the columns
@@ -1052,7 +1057,7 @@ MAIN_APPLICATION = *
 
 	jsr NextLine
 
-	dec EditLines
+	dec EditCurLine
 	bne @nextLine
 
 	; We are already in the right position
@@ -1094,9 +1099,7 @@ MAIN_APPLICATION = *
 	sta DATA_PTR+1
 	jsr CopyFrame
 
-	jsr DrawBitMatrix
-
-	rts
+	jmp DrawBitMatrix
 .endproc
 
 ; Copy a sprite frame from MEMCPY_SRC to MEMCPY_TGT.
@@ -1133,6 +1136,47 @@ MAIN_APPLICATION = *
 	sta FramePtr+1
 
 	rts
+
+.endproc
+
+; Clear the preview sprite buffer
+.proc ClearSprite
+
+	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta DATA_PTR
+	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta DATA_PTR+1
+
+	lda #$00
+	ldy #SPRITE_BUFFER_LEN-1
+
+@Loop:
+	sta (DATA_PTR),y
+	dey
+	bpl @Loop
+
+	jmp DrawBitMatrix
+
+.endproc
+
+; Invert the preview sprite buffer
+.proc InvertSprite
+
+	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta DATA_PTR
+	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
+	sta DATA_PTR+1
+
+	ldy #SPRITE_BUFFER_LEN-1
+
+@Loop:
+	lda (DATA_PTR),y
+	eor #$ff
+	sta (DATA_PTR),y
+	dey
+	bpl @Loop
+
+	jmp DrawBitMatrix
 
 .endproc
 
@@ -1225,12 +1269,12 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc SaveFile
+.proc SaveSprites
 
 	; TODO: DEBUG
 	lda #$00
 	sta FileFrameStart
-	lda #MAX_FRAMES
+	lda #MAX_FRAMES-1
 	sta FileFrameEnd
 	; TODO: END DEBUG
 
@@ -1296,6 +1340,26 @@ MAIN_APPLICATION = *
 	jmp @FileError
 
 @C1:
+	; print WRITING ...
+	lda #<WritingTxt
+	sta STRING_PTR
+	lda #>WritingTxt
+	sta STRING_PTR+1
+	ldy #$00
+	jsr PrintStringZ
+
+	; ... and append the frame counter 
+	lda #<FrameTxt
+	sta STRING_PTR
+	lda #>FrameTxt
+	sta STRING_PTR+1
+	jsr PrintStringZ
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR+1
+	sta STRING_PTR+1
+
 	; Calculate address of first frame where we want
 	; to save from
 	lda FileFrameStart
@@ -1315,25 +1379,17 @@ MAIN_APPLICATION = *
 	lda #>BSOUT
 	sta FARCALL_PTR+1
 
-	lda #<WriteFrameTxt
-	sta STRING_PTR
-	lda #>WriteFrameTxt
-	sta STRING_PTR+1
-
-	; Frame end will never change
-	lda #$00
-	sta BINVal+1
-	lda FileFrameEnd
-	sta BINVal
-	jsr BinToBCD16
-	lda #$01
-	tax				; We only need 3 digits
 	ldy #19
-	jsr BCDToString
 
 	; Write a single sprite buffer
 @NextFrame:
-	jsr PrintWriteProgress
+	ldx FILE_FRAME
+	inx
+	tax
+	ldx FileFrameEnd
+	inx
+	ldy #14
+	jsr PrintFrameCounter
 	ldy #$00		; Current byte of the sprite
 	sty FilePosY
 
@@ -1363,9 +1419,13 @@ MAIN_APPLICATION = *
 	jmp @NextFrame
 
 @Done:
-	; Looks irritating, as if the last block wouldn't
-	; have been written, so we print it.
-	jsr PrintWriteProgress
+	ldx FILE_FRAME
+	inx
+	tax
+	ldx FileFrameEnd
+	inx
+	ldy #14
+	jsr PrintFrameCounter
 
 	; Clear output and reset to STDIN
 	; before closing
@@ -1397,23 +1457,43 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc PrintWriteProgress
+; Print the frame counters N/M
+; STRING_PTR - point to start of the first digit.
+; A - First frame
+; X - Last frame
+; Y - offset in line
+;
+; Locals:
+; TMP_VAL_0
+; TMP_VAL_1
+.proc PrintFrameCounter
 
-	lda FILE_FRAME
-	sta BINVal
+	stx TMP_VAL_2		; Save max frames
+	sty TMP_VAL_3		; and y position in string
+
+	sta BINVal			; First print the CurFrame value
+	lda #$00
+	sta BINVal+1
 	jsr BinToBCD16
 	lda #$01			; Skip the first digit otherwise it would be 4
 	tax					; We only need 3 digits
-	ldy #15
+	ldy TMP_VAL_3
 	jsr BCDToString
+	sty TMP_VAL_3
 
-	ldy #$00
-	jsr PrintStringZ
+	lda TMP_VAL_2		; Max frames
+	sta BINVal			; First print the CurFrame value
+	jsr BinToBCD16
+	lda #$01			; Skip the first digit otherwise it would be 4
+	tax					; We only need 3 digits
+	ldy TMP_VAL_3
+	iny
+	jsr BCDToString
 
 	rts
 .endproc
 
-.proc LoadFile
+.proc LoadSprites
 
 	lda #0			; Fileno
 	ldx DiskDrive	; Device
@@ -1438,6 +1518,7 @@ MAIN_APPLICATION = *
 .endproc
 
 ; Library includes
+SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/scankeys.s"
 .include "kbd/key_pressed.s"
 .include "kbd/key_released.s"
@@ -1461,6 +1542,7 @@ EditLines: .byte 0
 ; Temp for drawing the edit box
 EditCurChar: .byte 0
 EditCurColumns: .byte 0
+EditCurLine: .byte 0
 
 ; Keyboard handling
 LastKeyLine: .res C128_KEY_LINES,$ff
@@ -1489,7 +1571,7 @@ EditorKeyHandler: .word 0
 LeftBottomRight: .res $03, $00
 
 FramePtr: .word 0	; Address for current frame pointer
-SpriteFrameTxt: .byte "FRAME:  1/  1",0
+FrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 1..N
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
@@ -1497,9 +1579,9 @@ ColorTxt: .byte "COLOR :",0
 SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
 
 OpenFileTxt:	.byte "OPEN FILE: ",0
-WriteFrameTxt:	.byte "WRITING FRAME:   1/  1",0
-LoadFrameTxt:	.byte "READING FRAME:   1/  1",0
-DoneTxt:		.byte "DONE                  ",0
+WritingTxt:		.byte "WRITING ",0
+LoadingTxt:		.byte "READING ",0
+DoneTxt:		.byte "DONE                                    ",0
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
