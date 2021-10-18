@@ -5,6 +5,12 @@
 ; AC - Character to be printed
 ; Y - Offset to screen position
 ; Pointer to screen location in CONSOLE_PTR
+
+.ifndef _PRINTBINARY_INC
+_PRINTBINARY_INC = 1
+
+;.segment "CODE"
+
 .proc PrintBinary
 	ldx #$07
 
@@ -27,3 +33,5 @@
 
 	rts
 .endproc
+
+.endif ; _PRINTBINARY_INC

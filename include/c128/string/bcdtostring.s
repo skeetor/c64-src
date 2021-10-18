@@ -8,6 +8,16 @@
 ;		number of digits is desired, otherwise it will always be
 ;		a multiple of 2 digits.
 ;
+; Return:
+; Y - Offset after the last char
+; X - Number of digits not 0.
+
+
+.ifndef _BCDTOSTRING_INC
+_BCDTOSTRING_INC = 1
+
+;.segment "CODE"
+
 .proc BCDToString
 
 	pha
@@ -30,7 +40,7 @@
 	adc #'0'
 	cmp #'0'
 	beq @CheckZero0
-	sta SKIP_LEADING_ZERO	; No longer leading zeroes
+	inc SKIP_LEADING_ZERO	; No longer leading zeroes
 	jmp @Store0
 
 @CheckZero0:
@@ -73,7 +83,10 @@
 	sta (STRING_PTR),y
 
 @Done:
+	ldx SKIP_LEADING_ZERO
 	iny
 	rts
 
 .endproc
+
+.endif ; _BCDTOSTRING_INC

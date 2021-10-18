@@ -10,15 +10,17 @@
 ; RETURN:
 ; Y contains the number of characters printed
 ;
-; LOCALS:
-; $57 - Remember the position in the string
-; $58 - Remember the position on screen
-;
 ; Both pointers will not be modified. The string can
 ; not be longer then 254+1 characters 
 ; Example: Start can be set to $0400 and Y
 ; 		to 10 to print the string in the middle
 ;
+
+.ifndef _PRINTSTRINGZ_INC
+_PRINTSTRINGZ_INC = 1
+
+;.segment "CODE"
+
 .proc PrintStringZ
 
 	sty STRING_POS
@@ -40,3 +42,10 @@
 	jmp @Loop
 
 .endproc
+
+;.segment "DATA"
+
+STR_CHARINDEX: .byte 0
+STRING_POS: .byte 0
+
+.endif ; _PRINTSTRINGZ_INC

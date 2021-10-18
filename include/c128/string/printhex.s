@@ -5,6 +5,12 @@
 ; AC - Character to be printed
 ; Y - Offset to screen position
 ; Pointer to screen location in CONSOLE_PTR
+
+.ifndef _PRINTHEX_INC
+_PRINTHEX_INC = 1
+
+;.segment "CODE"
+
 .proc PrintHex
 
 	ldx #$02
@@ -33,3 +39,5 @@
 
 	rts
 .endproc
+
+.endif ; _PRINTHEX_INC

@@ -1,10 +1,13 @@
 ; Sprite and character editor for C128 with CA65 assembler
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
+.macpack cbm
+
 .include "screenmap.inc"
 
 .include "c128_system.inc"
-;.include "c128_scankeys.inc"
+.include "tools/misc.inc"
+.include "tools/intrinsics.inc"
 
 ; Zeropage variables
 ZP_BASE				= $40
@@ -15,23 +18,15 @@ STRING_PTR			= ZP_BASE+2
 FILE_FRAME			= ZP_BASE+4
 LINE_OFFSET			= ZP_BASE+5
 
-FARCALL_MEM			= $fc
-FARCALL_TMP			= $fd
-
 MEMCPY_SRC			= ZP_BASE+6
 MEMCPY_TGT			= ZP_BASE+8
 MEMCPY_LEN			= ZP_BASE+10
 
-TMP_VAL_0			= ZP_BASE+12
-TMP_VAL_1			= ZP_BASE+13
-TMP_VAL_2			= ZP_BASE+14
-TMP_VAL_3			= ZP_BASE+15
+KEYTABLE_PTR		= $fb
 
 ; Library variables
 SKIP_LEADING_ZERO	= TMP_VAL_0
-STRING_POS			= TMP_VAL_0
-STR_CHARINDEX		= TMP_VAL_1
-SCANKEY_TMP			= TMP_VAL_0
+KEY_LINES			= C128_KEY_LINES
 
 ; Position of the color text.
 COLOR_TXT_ROW = 12
@@ -102,15 +97,29 @@ basicstub:
 @nextLine:
 .word 0 ;empty line == end pf BASIC
 
+;TestString: .byte 16, 16
+;			.byte "1234567890123456"
+;			TESTSTR_LEN = *-(TestString+2)
+;			.res TESTSTR_LEN+4, '*'
+
 .proc MainEntry
 
 	jsr Setup
 
-	; Sprite size multiplier.
-	; We can set this already, since we never
-	; need a different multiplier.
-	lda #SPRITE_BUFFER_LEN
-	sta Multiplier
+;	lda #'['
+;	sta SCREEN_VIC
+;	lda #']'
+;	sta SCREEN_VIC+17
+
+;	SetPointer (SCREEN_VIC+1), CONSOLE_PTR
+;	SetPointer (TestString+2), STRING_PTR
+
+;	ldx TestString
+;	ldy TestString+1
+;	jsr Input
+
+;	jsr Cleanup
+;	rts
 
 	lda #$00
 	sta VIC_BORDERCOLOR
@@ -148,8 +157,8 @@ basicstub:
 
 @WaitKey:
 	jsr ScanKeys
-	lda KeyPressed
-	beq @WaitKey
+	dey					; returned 1 if a key was pressed
+	bne @WaitKey
 
 	jsr SaveKeys
 
@@ -175,14 +184,10 @@ basicstub:
 	jmp @KeyLoop
 
 @Exit:
-	jsr WaitKeyboardRelease
 	jsr ClearScreen
 	jsr Cleanup
 
-	lda #<SCREEN_VIC
-	sta $e0
-	lda #>SCREEN_VIC
-	sta $e1
+	SetPointer SCREEN_VIC, $e0
 
 	rts
 .endproc
@@ -194,15 +199,6 @@ basicstub:
 	; Switch to default C128 config
 	lda #$00
 	sta MMU_CR_IO
-
-	sta Multiplicand
-	sta Multiplicand+1
-	sta Multiplier
-	sta Multiplier+1
-	sta Product
-	sta Product+1
-	sta Product+2
-	sta Product+3
 
 	sei
 
@@ -240,6 +236,7 @@ basicstub:
 
 	lda #EDITOR_COMMON_RAM_CFG
 	sta MMU_RAM_CR
+
 	cli
 
 	; If the program is loaded the first time
@@ -252,25 +249,31 @@ basicstub:
 	lda RelocationFlag
 	bne @SkipRelocation
 
-	lda #<MAIN_APPLICATION_LEN
-	sta MEMCPY_LEN
-	lda #>MAIN_APPLICATION_LEN
-	sta MEMCPY_LEN+1
+	SetPointer MAIN_APPLICATION_LEN, MEMCPY_LEN
+	SetPointer (MAIN_APPLICATION_LOAD+MAIN_APPLICATION_LEN), MEMCPY_SRC
+	SetPointer MAIN_APPLICATION_END, MEMCPY_TGT
 
-	lda #<(MAIN_APPLICATION_LOAD+MAIN_APPLICATION_LEN)
-	sta MEMCPY_SRC
-	lda #>(MAIN_APPLICATION_LOAD+MAIN_APPLICATION_LEN)
-	sta MEMCPY_SRC+1
-
-	lda #<MAIN_APPLICATION_END
-	sta MEMCPY_TGT
-	lda #>MAIN_APPLICATION_END
-	sta MEMCPY_TGT+1
 	jsr MemCopyReverse
 	lda #$01
 	sta RelocationFlag
 
 @SkipRelocation:
+
+	; We need this only once as we don't
+	; do any other multiplication. :)
+	lda #SPRITE_BUFFER_LEN
+	sta Multiplier
+
+	lda	#$00
+	sta Multiplicand
+	sta Multiplicand+1
+	sta Multiplier+1
+	sta Product
+	sta Product+1
+	sta Product+2
+	sta Product+3
+
+	jsr CopyKeytables
 
 	lda	#$00
 	sta SPRITE_EXP_X
@@ -313,12 +316,19 @@ basicstub:
 	dey
 	bpl @MMURestore
 
-	lda #$00
-	sta INP_NDX
-
 	sta MMU_CR
 
 	cli
+
+	jsr WaitKeyboardRelease
+
+	; Disable RUN/STOP
+	lda #$ff
+	sta STKEY
+
+	; Clear keybuffer
+	lda #$00
+	sta INP_NDX
 
 	rts
 .endproc
@@ -363,17 +373,21 @@ basicstub:
 ; The function to be called must be
 ; stored in the FARCALL_PTR. 
 .proc FARCALL
-	sta FARCALL_TMP
 
-	lda #>(@SysRestore-1)
-	pha
-	lda #<(@SysRestore-1)
-	pha
+	; We need AC here, so we have to save it
+	; in order to be able to pass it on to the
+	; FARCALL.
+	sta FARCALL_RESTORE
 
-	lda FARCALL_MEM
+	; Switch to the new memory layout
+	lda FARCALL_MEMCFG
 	sta MMU_PRE_CRC
 	sta MMU_LOAD_CRC
-	lda FARCALL_TMP
+
+	; Save the address so the memory
+	; will be reset
+	phr @SysRestore
+	lda FARCALL_RESTORE
 
 	jmp (FARCALL_PTR)
 
@@ -384,9 +398,104 @@ basicstub:
 	rts
 .endproc
 
+; Copy the kernel key decoding tables to our memory
+; so we can easily access it.
+.proc CopyKeytables
+
+	SetPointer KeyTables, MEMCPY_TGT
+
+	; Standard keytable without modifiers
+	SetPointer $fa80, MEMCPY_SRC
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	clc
+	lda MEMCPY_TGT
+	sta KeytableNormal
+	adc #KeyTableLen
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
+	sta KeytableNormal+1
+	adc #$00
+	sta MEMCPY_TGT+1
+
+	; Shifted keys
+	SetPointer $fad9, MEMCPY_SRC
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	clc
+	lda MEMCPY_TGT
+	sta KeytableShift
+	adc #KeyTableLen
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
+	sta KeytableShift+1
+	adc #$00
+	sta MEMCPY_TGT+1
+
+	; Commodore keys
+	SetPointer $fb32, MEMCPY_SRC
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	clc
+	lda MEMCPY_TGT
+	sta KeytableCommodore
+	adc #KeyTableLen
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
+	sta KeytableCommodore+1
+	adc #$00
+	sta MEMCPY_TGT+1
+
+	; CTRL keys
+	SetPointer $fb8b, MEMCPY_SRC
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	clc
+	lda MEMCPY_TGT
+	sta KeytableControl
+	adc #KeyTableLen
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
+	sta KeytableControl+1
+	adc #$00
+	sta MEMCPY_TGT+1
+
+	; ALT keys
+	SetPointer $fbe4, MEMCPY_SRC
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	clc
+	lda MEMCPY_TGT
+	sta KeytableAlt
+	lda MEMCPY_TGT+1
+	sta KeytableAlt+1
+
+	rts
+.endproc
+
+.proc memcpy255
+	dey
+@Loop:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	dey
+	cpy #$ff
+	bne @Loop
+
+	rts
+.endproc
+
 ; This data has to be here so we can cleanly exit after
 ; moving the code.
-FARCALL_PTR: .word 0
+FARCALL_PTR:		.word 0		; Pointer to function in other bank
+FARCALL_MEMCFG:		.byte 0		; Bank config to switch to
+FARCALL_RESTORE:	.byte 0		; Bank config we need switch back to
+
 MMUConfig: .res $0b, 0
 ZPSafe: .res $10,0
 ScreenCol: .byte $00, $00
@@ -421,21 +530,10 @@ MAIN_APPLICATION = *
 
 	jsr SpritePreviewBorder
 
-	lda #<(SpriteEditorKeyboardHandler-1)
-	sta EditorKeyHandler
-	lda #>(SpriteEditorKeyboardHandler-1)
-	sta EditorKeyHandler+1
-
 	; Print the frame text
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*1)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*1)
-	sta CONSOLE_PTR+1
-
-	lda #<FrameTxt
-	sta STRING_PTR
-	lda #>FrameTxt
-	sta STRING_PTR+1
+	SetPointer (SpriteEditorKeyboardHandler), EditorKeyHandler
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*1), CONSOLE_PTR
+	SetPointer FrameTxt, STRING_PTR
 	ldy #26
 	jsr PrintStringZ
 
@@ -452,29 +550,15 @@ MAIN_APPLICATION = *
 	jsr PrintFrameCounter
 
 	; Print the max frame text
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*21)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*21)
-	sta CONSOLE_PTR+1
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*21), CONSOLE_PTR
+	SetPointer SpriteFramesMaxTxt, STRING_PTR
 
-	lda #<SpriteFramesMaxTxt
-	sta STRING_PTR
-	lda #>SpriteFramesMaxTxt
-	sta STRING_PTR+1
 	ldy #26
 	jsr PrintStringZ
 
 	; Print the color choice
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2))
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2))
-	sta CONSOLE_PTR+1
-
-	lda #<ColorTxt
-	sta STRING_PTR
-	lda #>ColorTxt
-	sta STRING_PTR+1
-
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)), CONSOLE_PTR
+	SetPointer ColorTxt, STRING_PTR
 	ldx #2
 
 @ColorSelection:
@@ -505,12 +589,9 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc KeyboardTrampolin
-	; Virtual function call :)
-	lda EditorKeyHandler+1
-	pha
-	lda EditorKeyHandler
-	pha
-	rts
+
+	jmp (EditorKeyHandler)
+
 .endproc
 
 .proc SpriteEditorKeyboardHandler
@@ -519,24 +600,18 @@ MAIN_APPLICATION = *
 	inx						; 01
 	lda LastKeyLine,x
 	cmp	#$01				; 3
-	bne @C4
-	jmp IncSpriteColor3
+	fbeq IncSpriteColor3
 
-@C4:
 	cmp	#$20				; S
-	bne @C0
-	jmp SaveSprites
+	fbeq SaveSprites
 
-@C0:
 	inx						; 02
 	lda LastKeyLine,x
 	cmp #$80				; X
 	beq TogglePreviewX
 	cmp #$10				; C
-	bne @C2
-	jmp ClearSprite
+	fbeq ClearSprite
 
-@C2:
 	inx						; 03
 	lda LastKeyLine,x
 	cmp #$02				; Y
@@ -545,20 +620,16 @@ MAIN_APPLICATION = *
 	inx						; 04
 	lda LastKeyLine,x
 	cmp #$02				; I
-	bne @C3
-	jmp InvertSprite
+	fbeq InvertSprite
 
-@C3:
 	cmp #$10				; M
 	beq ToggleMulticolor
 
 	inx						; 05
 	lda LastKeyLine,x
 	cmp	#$04				; L
-	bne @C1
-	jmp LoadSprites
+	fbeq LoadSprites
 
-@C1:
 	inx						; 06
 
 	inx						; 07
@@ -654,10 +725,8 @@ MAIN_APPLICATION = *
 	; Clear the previous border area
 	ldx #7					; Number of lines
 	ldy #8					; max 6 columns
-	lda #<PREVIEW_POS_BIG
-	sta CONSOLE_PTR
-	lda #>PREVIEW_POS_BIG
-	sta CONSOLE_PTR+1
+
+	SetPointer PREVIEW_POS_BIG, CONSOLE_PTR
 	lda #SCREEN_COLUMNS
 	sta LINE_OFFSET
 	lda #' '
@@ -697,11 +766,7 @@ MAIN_APPLICATION = *
 	lda #8
 	sta VIC_SPR0_X+(SPRITE_PREVIEW*2)
 
-	lda #<PREVIEW_POS_BIG
-	sta CONSOLE_PTR
-	lda #>PREVIEW_POS_BIG
-	sta CONSOLE_PTR+1
-
+	SetPointer PREVIEW_POS_BIG, CONSOLE_PTR
 	lda #6				; Number expanded columns
 	jmp @DrawBorder
 
@@ -709,11 +774,7 @@ MAIN_APPLICATION = *
 	lda #16
 	sta VIC_SPR0_X+(SPRITE_PREVIEW*2)
 
-	lda #<PREVIEW_POS_SMALL
-	sta CONSOLE_PTR
-	lda #>PREVIEW_POS_SMALL
-	sta CONSOLE_PTR+1
-
+	SetPointer PREVIEW_POS_SMALL, CONSOLE_PTR
 	lda #3				; Number of shrunk columns 
 
 @DrawBorder:
@@ -798,10 +859,7 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	sta KeyLine+1
 	
-	lda #<(SCREEN_VIC + 2*SCREEN_COLUMNS)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC + 2*SCREEN_COLUMNS)
-	sta CONSOLE_PTR+1
+	SetPointer (SCREEN_VIC + 2*SCREEN_COLUMNS), CONSOLE_PTR
 	txa
 	ldy #34
 	sta (CONSOLE_PTR),y
@@ -838,10 +896,7 @@ MAIN_APPLICATION = *
 
 .proc CharEditor
 
-	lda #<SpriteBuffer
-	sta DATA_PTR
-	lda #>SpriteBuffer
-	sta DATA_PTR+1
+	SetPointer SpriteBuffer, DATA_PTR
 
 	lda #$01
 	sta EditColumnBytes
@@ -865,16 +920,13 @@ MAIN_APPLICATION = *
 
 .proc ClearScreen
 
-	lda #<SCREEN_VIC
-	sta CONSOLE_PTR
-	lda #>SCREEN_VIC
-	sta CONSOLE_PTR+1
+	SetPointer SCREEN_VIC, CONSOLE_PTR
 	lda #SCREEN_COLUMNS
 	sta LINE_OFFSET
 
 	lda #' '
 	ldy #SCREEN_COLUMNS
-	ldx #25
+	ldx #SCREEN_LINES+2
 	jsr FillRectangle
 
 	rts
@@ -912,10 +964,7 @@ MAIN_APPLICATION = *
 	bne	@HLoop
 
 	; Left/right border
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS)
-	sta CONSOLE_PTR+1
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS), CONSOLE_PTR
 
 	; Number of lines - 2 for Border. The last line will be used for character preview
 	lda #SCREEN_LINES-2
@@ -1003,11 +1052,7 @@ MAIN_APPLICATION = *
 .proc DrawBitMatrix
 
 	; Editormatrix screen position
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS+1)
-	sta CONSOLE_PTR+1
-
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CONSOLE_PTR
 	lda EditLines
 	sta EditCurLine
 
@@ -1142,11 +1187,7 @@ MAIN_APPLICATION = *
 ; Clear the preview sprite buffer
 .proc ClearSprite
 
-	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta DATA_PTR
-	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta DATA_PTR+1
-
+	SetPointer (SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN), DATA_PTR
 	lda #$00
 	ldy #SPRITE_BUFFER_LEN-1
 
@@ -1162,11 +1203,7 @@ MAIN_APPLICATION = *
 ; Invert the preview sprite buffer
 .proc InvertSprite
 
-	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta DATA_PTR
-	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta DATA_PTR+1
-
+	SetPointer (SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN), DATA_PTR
 	ldy #SPRITE_BUFFER_LEN-1
 
 @Loop:
@@ -1230,6 +1267,33 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+.proc ClearStatusLine
+	ldy #79
+	lda #' '
+
+:	sta SCREEN_VIC+SCREEN_COLUMNS*23,y
+	dey
+	bne :-
+	rts
+.endproc
+
+.proc Delay
+	lda #$02
+	sta TMP_VAL_0
+
+	; Delay loop
+:	ldx #$00
+:	ldy #$00
+:	dey
+	bne :-
+	dex
+	bne :--
+	dec TMP_VAL_0
+	bne :---
+
+	rts
+.endproc
+
 ; Create a sprite shape which makes the border edges better visible.
 .proc CreateDebugSprite
 	;DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
@@ -1278,22 +1342,18 @@ MAIN_APPLICATION = *
 	sta FileFrameEnd
 	; TODO: END DEBUG
 
-	lda #<OpenFileTxt
-	sta STRING_PTR
-	lda #>OpenFileTxt
-	sta STRING_PTR+1
+	jsr WaitKeyboardRelease
+	jsr GetSpriteSaveInfo
+	fbeq @Cancel
 
-	lda #<(SCREEN_VIC+SCREEN_COLUMNS*23)
-	sta CONSOLE_PTR
-	lda #>(SCREEN_VIC+SCREEN_COLUMNS*23)
-	sta CONSOLE_PTR+1
+	SetPointer OpenFileTxt, STRING_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
 	ldy #$00
-
 	jsr PrintStringZ
 
 	; Enable kernel for our saving calls
 	lda #$00
-	sta FARCALL_MEM
+	sta FARCALL_MEMCFG
 
 	; Prepare filename by appending 
 	; ',S,W' to open a SEQ file for writing
@@ -1318,41 +1378,27 @@ MAIN_APPLICATION = *
 	jsr SETNAME
 
 	; Open the file
-	lda #<OPEN
-	sta FARCALL_PTR
-	lda #>OPEN
-	sta FARCALL_PTR+1
+	SetPointer OPEN, FARCALL_PTR
 	jsr FARCALL
 	lda STATUS
-	beq @C0
+	beq :+
 	jmp @FileError
 
-@C0:
 	; Switch output to our file
-	lda #<CKOUT
-	sta FARCALL_PTR
-	lda #>CKOUT
-	sta FARCALL_PTR+1
+:	SetPointer CKOUT, FARCALL_PTR
 	ldx #2
 	jsr FARCALL
 	lda STATUS
-	beq @C1
+	beq :+
 	jmp @FileError
 
-@C1:
 	; print WRITING ...
-	lda #<WritingTxt
-	sta STRING_PTR
-	lda #>WritingTxt
-	sta STRING_PTR+1
+:	SetPointer WritingTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
 
 	; ... and append the frame counter 
-	lda #<FrameTxt
-	sta STRING_PTR
-	lda #>FrameTxt
-	sta STRING_PTR+1
+	SetPointer FrameTxt, STRING_PTR
 	jsr PrintStringZ
 
 	lda CONSOLE_PTR
@@ -1374,11 +1420,7 @@ MAIN_APPLICATION = *
 	sta FILE_FRAME
 
 	; Write a single character to disk
-	lda #<BSOUT
-	sta FARCALL_PTR
-	lda #>BSOUT
-	sta FARCALL_PTR+1
-
+	SetPointer BSOUT, FARCALL_PTR
 	ldy #19
 
 	; Write a single sprite buffer
@@ -1429,31 +1471,39 @@ MAIN_APPLICATION = *
 
 	; Clear output and reset to STDIN
 	; before closing
-	lda #<CLRCH
-	sta FARCALL_PTR
-	lda #>CLRCH
-	sta FARCALL_PTR+1
+	SetPointer CLRCH, FARCALL_PTR
 	jsr FARCALL
 
 	; Well, it's evident. :)
-	lda #<CLOSE
-	sta FARCALL_PTR
-	lda #>CLOSE
-	sta FARCALL_PTR+1
-
+	SetPointer CLOSE, FARCALL_PTR
 	lda #2
 	jsr FARCALL
 
-	lda #<DoneTxt
-	sta STRING_PTR
-	lda #>DoneTxt
-	sta STRING_PTR+1
+	SetPointer DoneTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
+	jsr Delay
+	jsr ClearStatusLine
 
 	rts
 
 @FileError:
+	rts
+
+@Cancel:
+	jsr ClearStatusLine
+
+	; Print cancel text in status line
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer CanceledTxt, STRING_PTR
+	ldy #0
+	jsr PrintStringZ
+
+	; Show the status line for a small period of time
+	jsr Delay
+
+	jsr ClearStatusLine
+
 	rts
 .endproc
 
@@ -1493,6 +1543,43 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+.proc GetSpriteSaveInfo
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer SaveTxt, STRING_PTR
+	ldy #0
+	jsr PrintStringZ
+
+	SetPointer FrameTxt, STRING_PTR
+	jsr PrintStringZ
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+11), CONSOLE_PTR
+	lda #1
+	ldx MaxFrame
+	ldy #10					; "SAVE FRAME:"
+	jsr PrintFrameCounter
+
+	SetPointer NumberInputFilter, InputFilterPtr
+	ldx #0
+	ldy #3
+	jsr Input
+	cmp #$00
+	beq @Cancel
+
+	SetPointer DefaultInputFilter, InputFilterPtr
+
+	lda #$01
+	rts
+
+@Cancel:
+	lda #$00
+	rts
+.endproc
+
+.proc EnterFilename
+	rts
+.endproc
+
 .proc LoadSprites
 
 	lda #0			; Fileno
@@ -1519,11 +1606,12 @@ MAIN_APPLICATION = *
 
 ; Library includes
 SCANKEYS_BLOCK_IRQ = 1
-.include "kbd/scankeys.s"
-.include "kbd/key_pressed.s"
-.include "kbd/key_released.s"
+.include "kbd/keyboard_pressed.s"
+.include "kbd/keyboard_released.s"
+.include "kbd/input.s"
+.include "kbd/number_input_filter.s"
 
-.include "math/bintobcd.s"
+.include "math/bintobcd16.s"
 .include "math/mult16x16.s"
 
 .include "string/bcdtostring.s"
@@ -1533,7 +1621,10 @@ SCANKEYS_BLOCK_IRQ = 1
 ; **********************************************
 .segment "DATA"
 
-.macpack cbm
+TMP_VAL_0: .word 0
+TMP_VAL_1: .word 0
+TMP_VAL_2: .word 0
+TMP_VAL_3: .word 0
 
 ; Number of lines/bytes to be printed as bits
 EditColumnBytes: .byte 0
@@ -1545,23 +1636,23 @@ EditCurColumns: .byte 0
 EditCurLine: .byte 0
 
 ; Keyboard handling
-LastKeyLine: .res C128_KEY_LINES,$ff
+LastKeyLine: .res KEY_LINES, $ff
 LastKeyPressed: .byte $ff
 LastKeyPressedLine: .byte $00
 
 ; Saving/Loading
-Filename: .byte "sprites,s"
-FilenameMode: .byte 0,0
+DiskDrive: .byte 8
+FilenameLen: .byte 0
+Filename: .res 16,0
+FilenameMode: .byte 0,0,0,0
 FileFrameStart: .byte 1		; first frame to save
 FileFrameEnd: .byte 0		; last frame to save
-FilePosY: .byte 0			; Save the current sprite data across write call.
 
-FILENAME_LEN = *-Filename
+; Temp for storing the current index in the spritebuffer
+; while loading/saving.
+FilePosY: .byte 0
 
-FilenameLen: .byte FILENAME_LEN
-DiskDrive: .byte 8
-
-; Funtionpointer to the current keyboardhandler
+; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
 
 ; Characters to be used for the sprite preview border
@@ -1578,6 +1669,14 @@ MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
 ColorTxt: .byte "COLOR :",0
 SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
 
+; User string to save from/to (inclusive) frame
+FirstFrameStr:	.byte 0, 3, 0, 0, 0
+LastFrameStr:	.byte 0, 3, 0, 0, 0
+FilenameStr:	.byte 0, 16
+				.res 16
+
+CanceledTxt:	.byte "           OPERATION CANCELED           ",0
+SaveTxt:		.byte "SAVE ",0
 OpenFileTxt:	.byte "OPEN FILE: ",0
 WritingTxt:		.byte "WRITING ",0
 LoadingTxt:		.byte "READING ",0
@@ -1608,5 +1707,14 @@ SpriteBuffer:
 	.byte $c4, $3c, $0f
 	.byte $c8, $3c, $0f
 	.byte $d0, $3c, $0f
+
+KeyTableLen = KEY_LINES*8
+KeyTables = *
+SymKeytableNormal		= KeyTables
+SymKeytableShift		= KeyTables + KeyTableLen
+SymKeytableCommodore 	= KeyTables + (KeyTableLen*2)
+SymKeytableControl		= KeyTables + (KeyTableLen*3)
+SymKeytableAlt 			= KeyTables + (KeyTableLen*4)
+
 MAIN_APPLICATION_END = *
 END:

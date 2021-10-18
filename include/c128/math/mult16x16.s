@@ -1,5 +1,11 @@
 ; https://codebase64.org/doku.php?id=base:16bit_multiplication_32-bit_product
 
+
+.ifndef _MULT16X16_INC
+_MULT16X16_INC = 1
+
+;.segment "CODE"
+
 .proc Mult16x16
 
 	lda	#$00
@@ -30,9 +36,11 @@
 .endproc
 
 ; **********************************************
-.segment "DATA"
+;.segment "DATA"
 
 ; 16x16 multiplication
 Multiplicand:	.byte 0, 0			; (A)
 Multiplier:		.byte 0, 0			; * (B)
 Product:		.byte 0, 0, 0, 0	; = (P)
+
+.endif ; _MULT16X16_INC

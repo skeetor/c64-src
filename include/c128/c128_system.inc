@@ -2,8 +2,8 @@
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
 
-.ifndef C128_SYSTEM_INC
-C128_SYSTEM_INC		= 1
+.ifndef _C128_SYSTEM_INC
+_C128_SYSTEM_INC		= 1
 
 .include "screenmap.inc"
 .include "c128.inc"
@@ -107,7 +107,8 @@ BSIN				= $ffcf
 BSOUT				= $ffd2
 
 ; To be added to cc65
-INP_NDX				= $D0
+STKEY				= $91		; Flag for STOP key. If pressed $ff otherwise $7f
+INP_NDX				= $d0		; Nuber of characters in keyboard buffer
 VIC_COLOR_RAM		= $d800
 
 ; MMU_CR = Configuration register
@@ -169,8 +170,8 @@ MMU_LOAD_CRD		= $ff04
 ; If set to 0 IRQ is not handling it. If set to 1
 ; IRQ is currently handling it, which will disable
 ; further processing.
-SPRINT					= $12fd
+SPRINT				= $12fd
 
 C128_KEY_LINES 		= 11
 
-.endif		; C128_SYSTEM_INC
+.endif		; _C128_SYSTEM_INC

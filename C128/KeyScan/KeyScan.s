@@ -4,30 +4,19 @@
 
 .include "screenmap.inc"
 
-.include "c128.inc"
+.include "c128_system.inc"
 
-divisor =		$58
-dividend =		$5a
-remainder =		$5c
-result =		dividend ; save memory by reusing divident to store the result
-
-
-C128_KEY_LINES 		= 11
 C128_MODE			= %01
 C64_MODE			= %10
-
-COL_BLACK			= 0
-COL_GREEN			= 5
-COL_MEDIUM_GREY		= 12
-COL_LIGHT_GREY		= 15
+KEY_LINES			= C128_KEY_LINES
 
 SCREEN_LINES		= 25
 TEXT_LINES			= 25
 SCREEN_COLUMNS		= 40
 
 CONSOLE_PTR			= SCREEN_PTR
+STRING_PTR			= $50
 SCREEN_VIC			= $0400
-COLOR_RAM			= $D800
 
 .export __LOADADDR__ = *
 .export STARTADDRESS = *
@@ -180,8 +169,6 @@ MainEntry:
 
 ; Print the list of keys from the table to the screen
 .proc PrintKeys
-
-	STRING_PTR = $55
 
 	jsr KeyColor
 
@@ -336,9 +323,9 @@ MainEntry:
 
 .proc KeyColor
 
-	lda #<(COLOR_RAM+SCREEN_COLUMNS)
+	lda #<(VIC_COLOR_RAM+SCREEN_COLUMNS)
 	sta $53
-	lda #>(COLOR_RAM+SCREEN_COLUMNS)
+	lda #>(VIC_COLOR_RAM+SCREEN_COLUMNS)
 	sta $54
 
 	lda #COL_LIGHT_GREY
@@ -465,10 +452,10 @@ MainEntry:
 	ldy #0
 
 @fillLoop:
-	sta COLOR_RAM,y
-	sta COLOR_RAM+256,y
-	sta COLOR_RAM+512,y
-	sta COLOR_RAM+768-24,y
+	sta VIC_COLOR_RAM,y
+	sta VIC_COLOR_RAM+256,y
+	sta VIC_COLOR_RAM+512,y
+	sta VIC_COLOR_RAM+768-24,y
 
 	dey
 	bne	@fillLoop
@@ -476,220 +463,16 @@ MainEntry:
 	rts
 .endproc
 
-; AC - Character to be printed
-; Y - Offset to screen position
-; Pointer to screen location in CONSOLE_PTR
-.proc PrintHex
+SCANKEYS_BLOCK_IRQ = 1
 
-	ldx #$02
-	pha
-
-	lsr
-	lsr
-	lsr
-	lsr
-
-@PrintChar:
-	and #$0f
-
-	cmp #$0a
-	bcs @Alpha
-	adc #$3a
-
-@Alpha:
-	sbc #$09
-	sta (CONSOLE_PTR),y
-	pla	
-	iny
-	dex
-	bne @PrintChar
-	pha
-
-	rts
-.endproc
-
-; AC - Character to be printed
-; Y - Offset to screen position
-; Pointer to screen location in CONSOLE_PTR
-.proc PrintBinary
-	ldx #$07
-
-@Loop:
-	lsr
-	pha
-	bcs @Print1
-	lda #$30
-	bne @Print
-
-@Print1:
-	lda #$31
-
-@Print:
-	sta (CONSOLE_PTR),y
-	pla
-	iny
-	dex
-	bpl @Loop
-
-	rts
-.endproc
-
-; Read the keyboard 11x8 matrix. For each line the current
-; state is stored in KeyLine[i].
-; If any keys are pressed Y contains 1 otherwise 0.
-;
-; The CIA ports are lowactive. So we set all bits to 1
-; to disable them, and only leave the required line bit
-; at 0. Then we can read the key states for this line.
-; This is repeated for all lines and the 0 bit is shifted
-; accordingly. For easier processing, we flip the bits of
-; the keys to make them highactive in the keyboardbuffer.
-;
-; For C64 the three extra lines can be skipped, the
-; rest of the code works the same.
-; $50 - TempValue
-.proc ScanKeys
-
-	ldy #$ff			; No Key pressed
-	sty KeyPressedLine
-	iny
-	sty KeyPressed
-
-	; First scan the regular C64 8x8 matrix
-	ldx #$07
-
-	sei
-	sta VIC_KBD_128	; Disable the extra lines of C128
-	lda #%01111111
-
-@NextKey:
-	sta $50
-	sta CIA1_PRA	; Port A to low
-	lda CIA1_PRB	; Read key
-	eor #$ff		; Flip bits to make them highactive
-	sta KeyLine,x	; Store key per matrixline
-	beq @NextLine
-	sta KeyPressed
-	stx KeyPressedLine
-	ldy #$01		; Key pressed flag
-
-@NextLine:
-	lda $50
-	sec
-	ror
-	dex
-	bpl @NextKey
-
-	; Now scan the 3 extra lines for the extended
-	; C128 keys with their own set of lines via VIC.
-	ldx #$02
-	lda #$ff
-	sta CIA1_PRA	; Disable the regular lines
-	lda #%11111011
-
-@NextXKey:
-	sta $50
-	sta VIC_KBD_128	; VIC port to low
-	lda CIA1_PRB	; Read key
-	eor #$ff		; Flip bits to make them highactive
-	sta KeyLine+8,x	; Store key per matrixline
-	beq @NextXLine
-	sta KeyPressed
-	stx KeyPressedLine
-	ldy #$01		; Key pressed flag
-
-@NextXLine:
-	lda $50
-	sec
-	ror
-	dex
-	bpl @NextXKey
-
-@Done:
-	cli
-
-	rts
-.endproc
-
-; Divide 16/16
-; https://codebase64.org/doku.php?id=base:16bit_division_16-bit_result
-.proc Div16
-	lda #$00		; preset remainder to 0
-	sta remainder
-	sta remainder+1
-	ldx #16			; repeat for each bit: ...
-
-@divloop:
-	asl dividend	; dividend lb & hb*2, msb -> Carry
-	rol dividend+1	
-	rol remainder	; remainder lb & hb * 2 + msb from carry
-	rol remainder+1
-	lda remainder
-	sec
-	sbc divisor		; substract divisor to see if it fits in
-	tay				; lb result -> Y, for we may need it later
-	lda remainder+1
-	sbc divisor+1
-	bcc @skip		; if carry=0 then divisor didn't fit in yet
-
-	sta remainder+1	; else save substraction result as new remainder,
-	sty remainder	
-	inc result		; and INCrement result cause divisor fit in 1 times
-
-@skip:
-	dex
-	bne @divloop	
-
-	rts
-.endproc
-
-; Print a zeroterminated String to the screen.
-; PARAMS:
-; CONSOLE_PTR - Pointer to screen
-; $55/$56 - Pointer to string
-; Y - offset to the startposition
-;
-; RETURN:
-; Y contains the number of characters printed
-;
-; Both pointers will not be modified. The string can
-; not be longer then 254+1 characters 
-; Example: Start can be set to $0400 and Y
-; 		to 10 to print the string in the middle
-;
-.proc PrintStringZ
-
-	STRING			= $55
-	OFFSET			= $57
-	CHARINDEX		= $58
-
-	sty OFFSET
-	ldy #$00
-
-@Loop:
-	lda (STRING),y
-	bne @Print
-	tya
-	rts
-
-@Print:
-	iny
-	sty CHARINDEX
-	ldy OFFSET
-	sta (CONSOLE_PTR),y
-	iny
-	sty OFFSET
-	ldy CHARINDEX
-	jmp @Loop
-
-.endproc
+.include "kbd/scankeys.s"
+.include "string/printhex.s"
+.include "string/printbin.s"
+.include "string/printstringz.s"
 
 .proc DetectSystem
 	rts
 .endproc
-
-; Now we create NOP sled, so we can load the program also
-; on the C64 and run it natively.
 
 .segment "DATA"
 
@@ -699,10 +482,6 @@ ScreenCol: .byte 0,0
 LineNrTxt: .byte 'L',0,0,':',0
 TextLine: .byte 0
 ShowLineTxt: .byte 0
-
-KeyLine: .res C128_KEY_LINES,$00
-KeyPressed: .byte $ff
-KeyPressedLine: .byte $00
 
 C64Txt: .byte " C64",0
 C128Txt: .byte " C128",0

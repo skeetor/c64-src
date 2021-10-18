@@ -1,20 +1,37 @@
-; Scan keyboard for C128 matrix
+; Scan keyboard matrix
+; This code should work on C64 (tested), C128 (tested),
+; MEGA65 (untested) and maybe on other Commodore machines as well.
+;
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
 ; If the function is not to be called during an IRQ
 ; but from regular code, then define SCANKEYS_BLOCK_IRQ.
 ;
-.segment "CODE"
+
+.ifndef _SCANKEYS_INC
+_SCANKEYS_INC = 1
+
+;.segment "CODE"
 
 ; Read the keyboard 11x8 matrix. For each line the current
-; state is stored.
+; state is stored in KeyLine[i].
+; If any keys are pressed Y contains 1 otherwise 0.
+;
+; The CIA ports are lowactive. So we set all bits to 1
+; to disable them, and only leave the required line bit
+; at 0. Then we can read the key states for this line.
+; This is repeated for all lines and the 0 bit is shifted
+; accordingly. For easier processing, we flip the bits of
+; the keys to make them highactive in the keyboardbuffer.
+;
+; For a real C64 the three extra lines can be skipped, the
+; remainder of the code works the same.
+;
 ; If any keys are pressed Y contains #$01
 .proc ScanKeys
 
-	ldy #$ff			; No Key pressed
-	sty KeyPressedLine
-	iny
-	sty KeyPressed
+	lda #$00
+	sta KeyPressed
 
 	; First scan the regular C64 8x8 matrix
 	ldx #$07
@@ -22,22 +39,22 @@
 .ifdef SCANKEYS_BLOCK_IRQ
 	sei
 .endif
+	lda #$ff
 	sta VIC_KBD_128	; Disable the extra lines of C128
 	lda #%01111111
 
 @NextKey:
-	sta SCANKEY_TMP
+	sta KeyTmp
 	sta CIA1_PRA	; Port A to low
 	lda CIA1_PRB	; Read key
 	eor #$ff		; Flip bits to make them highactive
 	sta KeyLine,x	; Store key per matrixline
 	beq @NextLine
-	sta KeyPressed
-	stx KeyPressedLine
 	ldy #$01		; Key pressed flag
+	sty KeyPressed
 
 @NextLine:
-	lda SCANKEY_TMP
+	lda KeyTmp
 	sec
 	ror
 	dex
@@ -51,18 +68,17 @@
 	lda #%11111011
 
 @NextXKey:
-	sta SCANKEY_TMP
+	sta KeyTmp
 	sta VIC_KBD_128	; VIC port to low
 	lda CIA1_PRB	; Read key
 	eor #$ff		; Flip bits to make them highactive
 	sta KeyLine+8,x	; Store key per matrixline
 	beq @NextXLine
-	sta KeyPressed
-	stx KeyPressedLine
 	ldy #$01		; Key pressed flag
+	sty KeyPressed
 
 @NextXLine:
-	lda SCANKEY_TMP
+	lda KeyTmp
 	sec
 	ror
 	dex
@@ -77,9 +93,11 @@
 .endproc
 
 ; **********************************************
-.segment "DATA"
+;.segment "DATA"
 
 ; Keyboard handling
-KeyLine: .res C128_KEY_LINES,$ff
-KeyPressed: .byte $ff
-KeyPressedLine: .byte $00
+KeyTmp: .byte 0
+KeyLine: .res KEY_LINES,$ff
+KeyPressed : .byte 0
+
+.endif ; _SCANKEYS_INC
