@@ -25,7 +25,6 @@ MEMCPY_LEN			= ZP_BASE+10
 KEYTABLE_PTR		= $fb
 
 ; Library variables
-SKIP_LEADING_ZERO	= TMP_VAL_0
 KEY_LINES			= C128_KEY_LINES
 
 ; Position of the color text.
@@ -54,7 +53,7 @@ SPRITE_COLOR		= VIC_SPR0_COLOR
 SPRITE_EXP_X		= VIC_SPR_EXP_X
 SPRITE_EXP_Y		= VIC_SPR_EXP_Y 
 
-; Screen mappings
+; Special screen codes for drawing the border
 CHAR_ROUND_TOP_LEFT		= $55
 CHAR_ROUND_TOP_RIGHT	= $49
 CHAR_ROUND_BOT_LEFT		= $4A
@@ -67,7 +66,6 @@ CHAR_SPLIT_BOT			= $71
 CHAR_SPLIT_TOP			= $72
 
 ; MMU Konfiguration. Data Becker 128 Intern P. 150
-
 EDITOR_RAM_CFG			= %00001110	; Bank 0 + $D000 + $C000-$FFFF
 EDITOR_COMMON_RAM_CFG	= %00000000 ; No common area 
 
@@ -97,29 +95,9 @@ basicstub:
 @nextLine:
 .word 0 ;empty line == end pf BASIC
 
-;TestString: .byte 16, 16
-;			.byte "1234567890123456"
-;			TESTSTR_LEN = *-(TestString+2)
-;			.res TESTSTR_LEN+4, '*'
-
 .proc MainEntry
 
 	jsr Setup
-
-;	lda #'['
-;	sta SCREEN_VIC
-;	lda #']'
-;	sta SCREEN_VIC+17
-
-;	SetPointer (SCREEN_VIC+1), CONSOLE_PTR
-;	SetPointer (TestString+2), STRING_PTR
-
-;	ldx TestString
-;	ldy TestString+1
-;	jsr Input
-
-;	jsr Cleanup
-;	rts
 
 	lda #$00
 	sta VIC_BORDERCOLOR
@@ -137,7 +115,7 @@ basicstub:
 	sta SPRINT
 	cli
 
-	jsr CreateDebugSprite
+	;jsr CreateDebugSprite
 
 	; Enable preview sprite
 	lda #(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)/SPRITE_BUFFER_LEN			; Sprite data address
@@ -147,9 +125,23 @@ basicstub:
 	lda SpriteColorValue
 	sta SPRITE_COLOR+SPRITE_PREVIEW
 
-	lda #$00
-	sta CurFrame
-	sta MaxFrame
+	ldx #$00
+	stx CurFrame
+	stx MaxFrame
+	jsr TogglePreviewX
+	jsr TogglePreviewY
+
+	; Switch to Sprite editor
+	ldx #$00			; No editor maxtrix update
+	jsr ClearPreviewSprite
+
+	; Clear the first frame on startup so we start with
+	; a clean editor.
+	SetPointer (SPRITE_BASE), MEMCPY_SRC
+	SetPointer (SPRITE_USER_START), MEMCPY_TGT
+	ldy #SPRITE_BUFFER_LEN
+	jsr memcpy255
+
 	jsr SpriteEditor
 
 @KeyLoop:
@@ -259,8 +251,6 @@ basicstub:
 
 @SkipRelocation:
 
-	; We need this only once as we don't
-	; do any other multiplication. :)
 	lda #SPRITE_BUFFER_LEN
 	sta Multiplier
 
@@ -361,6 +351,9 @@ basicstub:
 
 	dec MEMCPY_LEN+1
 	bpl MemCopyReverse
+
+	lda #8
+	sta DiskDrive
 
 	rts
 
@@ -541,11 +534,8 @@ MAIN_APPLICATION = *
 	sta STRING_PTR
 	lda CONSOLE_PTR+1
 	sta STRING_PTR+1
-	ldx CurFrame
-	inx
-	txa
+	lda CurFrame
 	ldx MaxFrame
-	inx
 	ldy #26+6
 	jsr PrintFrameCounter
 
@@ -600,17 +590,17 @@ MAIN_APPLICATION = *
 	inx						; 01
 	lda LastKeyLine,x
 	cmp	#$01				; 3
-	fbeq IncSpriteColor3
+	lbeq IncSpriteColor3
 
 	cmp	#$20				; S
-	fbeq SaveSprites
+	lbeq SaveSprites
 
 	inx						; 02
 	lda LastKeyLine,x
 	cmp #$80				; X
 	beq TogglePreviewX
 	cmp #$10				; C
-	fbeq ClearSprite
+	lbeq ClearPreviewSprite
 
 	inx						; 03
 	lda LastKeyLine,x
@@ -620,7 +610,7 @@ MAIN_APPLICATION = *
 	inx						; 04
 	lda LastKeyLine,x
 	cmp #$02				; I
-	fbeq InvertSprite
+	lbeq InvertSprite
 
 	cmp #$10				; M
 	beq ToggleMulticolor
@@ -628,7 +618,7 @@ MAIN_APPLICATION = *
 	inx						; 05
 	lda LastKeyLine,x
 	cmp	#$04				; L
-	fbeq LoadSprites
+	lbeq LoadSprites
 
 	inx						; 06
 
@@ -834,69 +824,13 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-; $f7
-.proc TestChar
-	lda VIC_SPR_EXP_Y
-	and #(1 << SPRITE_PREVIEW)
-	beq @YExpanded
-	rts
-
-@YExpanded:
-	ldx #$00
-
-@l:
-	txa
-	pha
-	jsr WaitKeyboardRelease
-	jsr WaitKeyboardPressed
-	pla
-
-	pha
-	tax
-
-	lda CONSOLE_PTR
-	sta KeyLine
-	lda CONSOLE_PTR+1
-	sta KeyLine+1
-	
-	SetPointer (SCREEN_VIC + 2*SCREEN_COLUMNS), CONSOLE_PTR
-	txa
-	ldy #34
-	sta (CONSOLE_PTR),y
-	ldy #34+4*SCREEN_COLUMNS
-	sta (CONSOLE_PTR),y
-
-	txa
-	ldy #31
-	jsr PrintHex
-
-	lda KeyLine
-	sta CONSOLE_PTR
-	lda KeyLine+1
-	sta CONSOLE_PTR+1
-
-	pla
-	tax
-
-	ldy #$01
-	sta (CONSOLE_PTR),Y
-	iny
-	sta (CONSOLE_PTR),Y
-	iny
-	sta (CONSOLE_PTR),Y
-	dex
-	bne @l
-
-	rts
-.endproc
-
 ; ******************************************
 ; Character Editor
 ; ******************************************
 
 .proc CharEditor
 
-	SetPointer SpriteBuffer, DATA_PTR
+	;SetPointer SpriteBuffer, DATA_PTR
 
 	lda #$01
 	sta EditColumnBytes
@@ -1163,13 +1097,21 @@ MAIN_APPLICATION = *
 ; Calculate the sprite buffer address for the specified frame.
 ; Result is stored in FramePtr.
 ;
+; PARAM:
 ; A - framenumber 0..MAX_FRAMES-1
+;
+; RETURN:
+; FramePtr - pointer to frame memory
 ;
 .proc CalcFramePointer
 
 	sta Multiplicand
 	lda #$00
 	sta Multiplicand+1
+
+	sta Multiplier+1
+	lda #SPRITE_BUFFER_LEN
+	sta Multiplier
 	jsr Mult16x16
 
 	clc
@@ -1185,7 +1127,7 @@ MAIN_APPLICATION = *
 .endproc
 
 ; Clear the preview sprite buffer
-.proc ClearSprite
+.proc ClearPreviewSprite
 
 	SetPointer (SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN), DATA_PTR
 	lda #$00
@@ -1196,7 +1138,13 @@ MAIN_APPLICATION = *
 	dey
 	bpl @Loop
 
+	cpx #$00
+	beq @NoUpdate
+
 	jmp DrawBitMatrix
+
+@NoUpdate:
+	rts
 
 .endproc
 
@@ -1217,11 +1165,38 @@ MAIN_APPLICATION = *
 
 .endproc
 
+; Copy the sprite buffer from source to traget
+;
+; PARAM:
+; A - Source frame
+; X - Target frame
+.proc CopySpriteFrame
+
+	pha
+	txa
+	jsr CalcFramePointer
+
+	lda FramePtr
+	sta MEMCPY_TGT
+	lda FramePtr+1
+	sta MEMCPY_TGT+1
+
+	pla
+	jsr CalcFramePointer
+	lda FramePtr
+	sta MEMCPY_SRC
+	lda FramePtr+1
+	sta MEMCPY_SRC+1
+	ldy #SPRITE_BUFFER_LEN
+	jmp memcpy255
+
+.endproc
+
 ; Fill a memory rectangle with the specified value
 ;
 ; PARAMS:
 ; X - Number of lines
-; Y - Number of columns 1 .. 40
+; Y - Number of columns 1 .. SCREEN_COLUMNS
 ; A - character to use
 ; CONSOLE_PTR - Pointer to top left corner.
 ; LINE_OFFSET - Line offset
@@ -1267,13 +1242,33 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Clear a single line on the console
+;
+; PARAM:
+; Y - Offset in the line
+; CONSOL_PTR - points to the line
+.proc ClearLine
+
+	lda #' '
+	ldx #SCREEN_COLUMNS
+
+:
+	sta (CONSOLE_PTR),y
+	iny
+	dex
+	bpl :-
+
+	rts
+.endproc
+
 .proc ClearStatusLine
 	ldy #79
 	lda #' '
 
 :	sta SCREEN_VIC+SCREEN_COLUMNS*23,y
 	dey
-	bne :-
+	bpl :-
+
 	rts
 .endproc
 
@@ -1294,6 +1289,52 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Print the frame counters N/M
+; STRING_PTR - point to start of the first digit.
+; A - First frame - 0 ... MAX_FRAMES-1
+; X - Last frame - 0 ... MAX_FRAMES-1
+; Y - offset in line
+;
+; Locals:
+; TMP_VAL_0
+; TMP_VAL_1
+.proc PrintFrameCounter
+
+	; For display to the user we want to have the counter
+	; from 1...MAX_FRAMES
+	inx
+	stx TMP_VAL_2		; Save max frames
+	sty TMP_VAL_3		; and y position in string
+
+	tax
+	inx
+	stx BINVal			; First print the CurFrame value
+	lda #$00
+	sta BINVal+1
+	jsr BinToBCD16
+
+	ldx #$00			; We want right alignment
+	stx LeftAligned
+
+	inx					; Skip the first digit otherwise it would be 4
+	txa					; We only need 3 digits
+	ldy TMP_VAL_3
+	jsr BCDToString
+	sty TMP_VAL_3
+
+	lda TMP_VAL_2		; Max frames
+	sta BINVal			; First print the CurFrame value
+	jsr BinToBCD16
+	lda #$01			; Skip the first digit otherwise it would be 4
+	tax					; We only need 3 digits
+	ldy TMP_VAL_3
+	iny
+	jsr BCDToString
+
+	rts
+.endproc
+
+.if 0
 ; Create a sprite shape which makes the border edges better visible.
 .proc CreateDebugSprite
 	;DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
@@ -1332,35 +1373,31 @@ MAIN_APPLICATION = *
 
 	rts
 .endproc
+.endif
 
 .proc SaveSprites
 
-	; TODO: DEBUG
-	lda #$00
-	sta FileFrameStart
-	lda #MAX_FRAMES-1
-	sta FileFrameEnd
-	; TODO: END DEBUG
-
 	jsr WaitKeyboardRelease
 	jsr GetSpriteSaveInfo
-	fbeq @Cancel
+	lbeq @Cancel
 
 	SetPointer OpenFileTxt, STRING_PTR
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	ldy #0
+	jsr ClearLine
+	ldy #SCREEN_COLUMNS
+	jsr ClearLine
 	ldy #$00
 	jsr PrintStringZ
+
+	SetPointer Filename, STRING_PTR
+	ldy #12
+	ldx FilenameLen
+	jsr PrintPETSCII
 
 	; Enable kernel for our saving calls
 	lda #$00
 	sta FARCALL_MEMCFG
-
-	; Prepare filename by appending 
-	; ',S,W' to open a SEQ file for writing
-	lda #','
-	sta FilenameMode
-	lda #'w'
-	sta FilenameMode+1
 
 	; File set parameters
 	lda #2				; Fileno
@@ -1372,28 +1409,23 @@ MAIN_APPLICATION = *
 	ldx #0				; RAM bank of filename
 	jsr SETBANK
 
-	lda FilenameLen
-	ldx #<(Filename)
-	ldy #>(Filename)
-	jsr SETNAME
-
-	; Open the file
-	SetPointer OPEN, FARCALL_PTR
-	jsr FARCALL
-	lda STATUS
-	beq :+
-	jmp @FileError
-
+	lda #'w'
+	jsr OpenFile
+	bcc :+
+	jmp FileError
+:
 	; Switch output to our file
-:	SetPointer CKOUT, FARCALL_PTR
+	SetPointer CKOUT, FARCALL_PTR
 	ldx #2
 	jsr FARCALL
-	lda STATUS
-	beq :+
-	jmp @FileError
+	bcc :+
+	jmp FileError
+:
+	ldy #0
+	jsr ClearLine
 
 	; print WRITING ...
-:	SetPointer WritingTxt, STRING_PTR
+	SetPointer WritingTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
 
@@ -1426,10 +1458,8 @@ MAIN_APPLICATION = *
 	; Write a single sprite buffer
 @NextFrame:
 	ldx FILE_FRAME
-	inx
 	tax
 	ldx FileFrameEnd
-	inx
 	ldy #14
 	jsr PrintFrameCounter
 	ldy #$00		; Current byte of the sprite
@@ -1438,9 +1468,13 @@ MAIN_APPLICATION = *
 @WriteFrame:
 	lda (DATA_PTR),y
 	inc FilePosY
-	jsr FARCALL
-	lda STATUS
-	bne @FileError
+	jsr FARCALL		; Write byte
+	bcc :+
+
+	; Write error
+	jmp FileError
+
+:
 	ldy FilePosY
 	cpy #SPRITE_BUFFER_LEN				; Size of a sprite block
 	bne	@WriteFrame
@@ -1449,8 +1483,9 @@ MAIN_APPLICATION = *
 	iny
 	sty FILE_FRAME
 	cpy FileFrameEnd
-	beq @Done
+	bge @Done
 
+	; Switch to next sprite buffer
 	clc
 	lda DATA_PTR
 	adc #SPRITE_BUFFER_LEN
@@ -1462,22 +1497,13 @@ MAIN_APPLICATION = *
 
 @Done:
 	ldx FILE_FRAME
-	inx
 	tax
 	ldx FileFrameEnd
-	inx
 	ldy #14
 	jsr PrintFrameCounter
 
-	; Clear output and reset to STDIN
-	; before closing
-	SetPointer CLRCH, FARCALL_PTR
-	jsr FARCALL
-
-	; Well, it's evident. :)
-	SetPointer CLOSE, FARCALL_PTR
 	lda #2
-	jsr FARCALL
+	jsr CloseFile
 
 	SetPointer DoneTxt, STRING_PTR
 	ldy #$00
@@ -1487,15 +1513,16 @@ MAIN_APPLICATION = *
 
 	rts
 
-@FileError:
-	rts
-
 @Cancel:
+	; Print cancel text in status line
+	SetPointer CanceledTxt, STRING_PTR
+	jmp ShowStatusLine
+.endproc
+
+.proc ShowStatusLine
 	jsr ClearStatusLine
 
-	; Print cancel text in status line
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
-	SetPointer CanceledTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
 
@@ -1503,43 +1530,6 @@ MAIN_APPLICATION = *
 	jsr Delay
 
 	jsr ClearStatusLine
-
-	rts
-.endproc
-
-; Print the frame counters N/M
-; STRING_PTR - point to start of the first digit.
-; A - First frame
-; X - Last frame
-; Y - offset in line
-;
-; Locals:
-; TMP_VAL_0
-; TMP_VAL_1
-.proc PrintFrameCounter
-
-	stx TMP_VAL_2		; Save max frames
-	sty TMP_VAL_3		; and y position in string
-
-	sta BINVal			; First print the CurFrame value
-	lda #$00
-	sta BINVal+1
-	jsr BinToBCD16
-	lda #$01			; Skip the first digit otherwise it would be 4
-	tax					; We only need 3 digits
-	ldy TMP_VAL_3
-	jsr BCDToString
-	sty TMP_VAL_3
-
-	lda TMP_VAL_2		; Max frames
-	sta BINVal			; First print the CurFrame value
-	jsr BinToBCD16
-	lda #$01			; Skip the first digit otherwise it would be 4
-	tax					; We only need 3 digits
-	ldy TMP_VAL_3
-	iny
-	jsr BCDToString
-
 	rts
 .endproc
 
@@ -1548,26 +1538,76 @@ MAIN_APPLICATION = *
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
 	SetPointer SaveTxt, STRING_PTR
 	ldy #0
+	jsr ClearLine
+
+	ldy #0
 	jsr PrintStringZ
 
 	SetPointer FrameTxt, STRING_PTR
 	jsr PrintStringZ
 
+	SetPointer DriveTxt, STRING_PTR
+	ldy #20
+	jsr PrintStringZ
+
+	;SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+11), CONSOLE_PTR
+	;SetPointer DriveTxt, STRING_PTR
+	;lda #0
+	;ldx MaxFrame
+	;ldy #10					; Skip "SAVE FRAME:"
+	;jsr PrintFrameCounter
+
+	SetPointer EnterNumberStr, STRING_PTR
+
+	lda #3
+	sta EnterNumberStrLen
+
+	; Get low frame
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+11), CONSOLE_PTR
 	lda #1
-	ldx MaxFrame
-	ldy #10					; "SAVE FRAME:"
-	jsr PrintFrameCounter
+	ldx #1
+	ldy MaxFrame
+	iny					; User deals with 1..N
+	jsr EnterNumber
+	cpy #1
+	bne @Cancel
+	sta FileFrameStart
+	dec FileFrameStart	; Back to 0 based
 
-	SetPointer NumberInputFilter, InputFilterPtr
-	ldx #0
-	ldy #3
-	jsr Input
-	cmp #$00
-	beq @Cancel
+	; Get high frame
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+15), CONSOLE_PTR
+	ldx MaxFrame	; User deals with 1..N
+	inx
+	txa
+	tay
+	jsr EnterNumber
+	cpy #1
+	bne @Cancel
+	sta FileFrameEnd
+	dec FileFrameEnd	; Back to 0 based
 
-	SetPointer DefaultInputFilter, InputFilterPtr
+	; Get drive number 
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+27), CONSOLE_PTR
+	lda #$02
+	sta EnterNumberStrLen
+	lda DiskDrive
+	ldx #8
+	ldy #11
+	jsr EnterNumber
+	cpy #1
+	bne @Cancel
+	sta DiskDrive
 
+	ldy #0
+	jsr ClearLine
+
+	; And finally get the filename
+	jsr EnterFilename
+
+	ldy #0
+	jsr ClearLine
+
+	; Everything went ok
 	lda #$01
 	rts
 
@@ -1577,6 +1617,293 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc EnterFilename
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer FilenameTxt, STRING_PTR
+
+	ldy #0
+	jsr ClearLine
+
+	ldy #0
+	ldx FilenameLen
+	jsr PrintString
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+FilenameTxtLen), CONSOLE_PTR
+	SetPointer Filename, STRING_PTR
+
+@InputLoop:
+	ldx FilenameLen
+	ldy #16
+	jsr Input
+
+	cmp #$00
+	beq @Cancel
+
+	cpy #$00
+	beq @EmptyFilename
+	sty FilenameLen
+
+	lda #$10
+	rts
+
+@Cancel:
+	lda #$00
+	rts
+
+@EmptyFilename:
+	lda STRING_PTR
+	pha
+	lda STRING_PTR+1
+	pha
+
+	lda CONSOLE_PTR
+	pha
+	lda CONSOLE_PTR+1
+	pha
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*24), CONSOLE_PTR
+	SetPointer EmptyFilenameTxt, STRING_PTR
+	ldy #0
+	jsr PrintStringZ
+
+	jsr Delay
+	jsr Delay
+
+	ldy #0
+	jsr ClearLine
+
+	pla
+	sta CONSOLE_PTR+1
+	pla
+	lda CONSOLE_PTR
+
+	pla
+	sta STRING_PTR+1
+	pla
+	lda STRING_PTR
+
+	jmp @InputLoop
+.endproc
+
+; Input a number value which can be 0...255
+;
+; PARAMS:
+; A - CurValue
+; X - MinValue
+; Y - MaxValue
+; CONSOLE_PTR - position of the input string
+; EnterNumberStrLen - Length of input string (1...3)
+;
+; RETURN:
+; A - Lobyte of value
+; X - Hibyte of value
+; Y - 1 (OK) : 0 (CANCEL)
+; If Y != 1 the value in A is undefined and should not be used.
+.proc EnterNumber
+	sta EnterNumberCurVal
+	stx EnterNumberMinVal
+	sty EnterNumberMaxVal
+
+	SetPointer NumberInputFilter, InputFilterPtr
+
+@InputLoop:
+	SetPointer EnterNumberStr, STRING_PTR
+	ldy #4
+	lda #' '
+
+@ClearString:
+	sta (STRING_PTR),y
+	dey
+	bpl @ClearString
+
+	lda EnterNumberCurVal
+	sta BINVal
+	lda #$00
+	sta BINVal+1
+	jsr BinToBCD16
+
+	lda #$ff			; Enable left alignment for the input
+	sta LeftAligned
+	lda #$01			; We only need 3 digits, so we have to skip the highbyte
+	tax
+	ldy #0
+	jsr BCDToString
+
+	ldy EnterNumberStrLen
+	jsr Input
+	cmp #$00			; User pressed cancel button
+	beq @Cancel
+	cpy #$00			; Empty string was entered
+	beq @RangeError
+
+	jsr StringToBin16
+	cpx #$00			; Value can not be higher than 255
+	bne @RangeError		; So the highbyte must be 0
+
+	cmp EnterNumberMinVal
+	blt @RangeError
+	cmp EnterNumberMaxVal
+	bgt @RangeError
+
+	ldy #1
+	jmp @Done
+
+@Cancel:
+	ldy #0
+
+@Done:
+	pha
+	SetPointer DefaultInputFilter, InputFilterPtr
+	pla
+	rts
+
+@RangeError:
+	lda STRING_PTR
+	sta EnterNumberStringPtr
+	lda STRING_PTR+1
+	sta EnterNumberStringPtr+1
+
+	lda CONSOLE_PTR
+	sta EnterNumberConsolePtr
+	lda CONSOLE_PTR+1
+	sta EnterNumberConsolePtr+1
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*24), CONSOLE_PTR
+	SetPointer EnterNumberMsg, STRING_PTR
+	ldy #0
+	ldx #EnterNumberMsgLen
+	jsr PrintString
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR+1
+	sta STRING_PTR+1
+
+	ldx EnterNumberMinVal
+	dex
+	txa
+	ldx EnterNumberMaxVal
+	dex
+	ldy #24
+	jsr PrintFrameCounter
+
+	lda #'/'
+	ldy #27
+	sta (CONSOLE_PTR),y
+
+	jsr Delay
+	jsr Delay
+
+	ldy #0
+	jsr ClearLine
+
+	lda EnterNumberConsolePtr
+	sta CONSOLE_PTR
+	lda EnterNumberConsolePtr+1
+	sta CONSOLE_PTR+1
+
+	lda EnterNumberStringPtr
+	sta STRING_PTR
+	lda EnterNumberStringPtr+1
+	sta STRING_PTR+1
+
+	jmp @InputLoop
+.endproc
+
+; Open a sequential file for reading or writing.
+; Filename must be already present.
+;
+; PARAM:
+; A - 'r' for read or 'w' for write
+; Filename - Filename in PETSCII
+; FilenameLen - Length of the filename
+;
+; RETURN:
+; STATUS - Errorstatus from OS
+;
+.proc OpenFile	; Prepare filename by appending 
+
+	pha
+	; ',S,W' to open a SEQ file for writing
+	ldy FilenameLen
+	lda #','
+	sta Filename,y
+	iny
+	lda #'s'
+	sta Filename,y
+	iny
+	lda #','
+	sta Filename,y
+	iny
+	pla
+	sta Filename,y
+
+	SetPointer CLRCH, FARCALL_PTR
+	jsr FARCALL
+
+	lda FilenameLen
+	clc
+	adc #4
+	ldx #<(Filename)
+	ldy #>(Filename)
+	jsr SETNAME
+
+	; Open the file
+	SetPointer OPEN, FARCALL_PTR
+	jsr FARCALL
+
+	rts
+.endproc
+
+; Close the file which was previously opened
+;
+; PARAM:
+; A - FileNo
+;
+.proc CloseFile
+
+	pha
+	; Well, it's evident. :)
+	SetPointer CLOSE, FARCALL_PTR
+	pla
+	jsr FARCALL
+
+	; Clear output and reset to STDIN
+	; before closing
+	SetPointer CLRCH, FARCALL_PTR
+	jsr FARCALL
+	rts
+.endproc
+
+.proc FileError
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+
+	bit $90
+	bpl @UnknownError
+
+	; Device not present error
+	SetPointer ErrorDeviceNotPresentTxt, STRING_PTR
+	ldy #SCREEN_COLUMNS
+	jsr PrintStringZ
+	jmp @Done
+
+@UnknownError:
+	; Some unspecified error (most likely read or write error)
+	SetPointer ErrorFileIOTxt, STRING_PTR
+	ldy #SCREEN_COLUMNS
+	jsr PrintStringZ
+
+@Done:
+	jsr Delay
+	jsr Delay
+
+@Close:
+	lda #2
+	jsr CloseFile
+
+	ldy #0
+	jsr ClearLine
+	ldy #SCREEN_COLUMNS
+	jsr ClearLine
 	rts
 .endproc
 
@@ -1587,10 +1914,9 @@ MAIN_APPLICATION = *
 	ldy #0			; Load with address (1 = loadadress is in file)
 	jsr SETFPAR
 
-	lda FilenameLen
-	ldx #<(Filename)
-	ldy #>(Filename)
-	jsr SETNAME
+	lda #'r'
+	jsr OpenFile
+	lda STATUS
 
 	lda #0			; RAM bank to load file
 	ldx #0			; RAM bank of filename
@@ -1615,8 +1941,11 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "math/mult16x16.s"
 
 .include "string/bcdtostring.s"
+.include "string/printstring.s"
+.include "string/printpetscii.s"
 .include "string/printstringz.s"
 .include "string/printhex.s"
+.include "string/string_to_bin16.s"
 
 ; **********************************************
 .segment "DATA"
@@ -1642,11 +1971,24 @@ LastKeyPressedLine: .byte $00
 
 ; Saving/Loading
 DiskDrive: .byte 8
-FilenameLen: .byte 0
-Filename: .res 16,0
-FilenameMode: .byte 0,0,0,0
+FilenameLen: .byte FilenameDefaultLen
+Filename: .byte "SPRITEDATA"
+FilenameDefaultLen = *-Filename
+		.res 21-FilenameDefaultLen,0
+
 FileFrameStart: .byte 1		; first frame to save
-FileFrameEnd: .byte 0		; last frame to save
+FileFrameEnd: .byte 0	; last frame to save
+
+EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
+EnterNumberMsgLen = *-EnterNumberMsg
+
+EnterNumberStr: .res 7,0
+EnterNumberStrLen: .byte 0	; Length of the input string
+EnterNumberCurVal: .byte 0
+EnterNumberMinVal: .byte 0
+EnterNumberMaxVal: .byte 0
+EnterNumberStringPtr: .word 0
+EnterNumberConsolePtr: .word 0
 
 ; Temp for storing the current index in the spritebuffer
 ; while loading/saving.
@@ -1664,26 +2006,28 @@ LeftBottomRight: .res $03, $00
 FramePtr: .word 0	; Address for current frame pointer
 FrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
-CurFrame: .byte $00		; Number of active frame 1..N
+CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
 ColorTxt: .byte "COLOR :",0
 SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
 
-; User string to save from/to (inclusive) frame
-FirstFrameStr:	.byte 0, 3, 0, 0, 0
-LastFrameStr:	.byte 0, 3, 0, 0, 0
-FilenameStr:	.byte 0, 16
-				.res 16
-
 CanceledTxt:	.byte "           OPERATION CANCELED           ",0
+FilenameTxt:	.byte "FILENAME: ",0
+FilenameTxtLen	= (*-FilenameTxt)-1
 SaveTxt:		.byte "SAVE ",0
 OpenFileTxt:	.byte "OPEN FILE: ",0
 WritingTxt:		.byte "WRITING ",0
 LoadingTxt:		.byte "READING ",0
 DoneTxt:		.byte "DONE                                    ",0
+EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
+DriveTxt:		.byte "DRIVE: ",0
+
+ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
+ErrorFileIOTxt: .byte "FILE I/O ERROR",0
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
+.if 0
 ; TODO: Just for early debugging. Can be removed
 SpriteBuffer: 
 	.byte $00, $3c, $0f
@@ -1707,6 +2051,7 @@ SpriteBuffer:
 	.byte $c4, $3c, $0f
 	.byte $c8, $3c, $0f
 	.byte $d0, $3c, $0f
+.endif
 
 KeyTableLen = KEY_LINES*8
 KeyTables = *

@@ -1,29 +1,29 @@
 # Sprite and character editor for the C128
 
-Features done:
-Toggle X/Y size
-Toggle Multicolor
-Cycle color 1-3
-
 #### Sprites
 
 #### - Keys (* = not implemented)
 *A - Animate (cycle through frames)<br>
-C - Clear edit matrix<br>
-*E - Erase Frame<br>
+*C - Clear edit matrix (Change to E)<br>
+*C - Copy current frame to N<br>
+*D - Delete Frame<br>
+*E - Erase grid<br>
 I - Invert edit matrix<br>
 *F - Select frame<br>
-*K - Kill (delets all frames in memory)<br>
-*L - Load buffer<br>
+*H - Help screen<br>
+*L - Load spriteset<br>
 M - Multicolor<br>
-*N - New Frame (Append or insert)<br>
+*N - New Frame (Append)<br>
+*SHIFT N - New Frame (Insert)<br>
 *P - Paste Frame (copy from frame N)<br>
-*S - Save sprites (mostly done. Input of frame selection and filename missing)<br>
+S - Save spriteset<br>
 *U - Undo (restore the current frame)
 X - Toggle Width<br>
 Y - Toggle Heigth<br>
 *SPC - Toggle bit<br>
-*SHIFT Right/Left - Next/Previous frame<br>
+*CRSR Left/Right/Up/Down - Move cursor in edit grid<br>
+*SHIFT CRSR Left/Right - next/previous frame<br>
+*COMDORE CRSR Left/Right - Copy frame to next/previous<br>
 1 - Cycle Spritecolor
 2 - Cycle Spritecolor MC0
 3 - Cycle Spritecolor MC1

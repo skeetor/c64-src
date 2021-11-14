@@ -23,7 +23,7 @@ _PRINTSTRINGZ_INC = 1
 
 .proc PrintStringZ
 
-	sty STRING_POS
+	sty STRZ_POS
 	ldy #$00
 
 @Loop:
@@ -33,19 +33,19 @@ _PRINTSTRINGZ_INC = 1
 
 @Print:
 	iny
-	sty STR_CHARINDEX
-	ldy STRING_POS
+	sty STRZ_CHARINDEX
+	ldy STRZ_POS
 	sta (CONSOLE_PTR),y
 	iny
-	sty STRING_POS
-	ldy STR_CHARINDEX
+	sty STRZ_POS
+	ldy STRZ_CHARINDEX
 	jmp @Loop
 
 .endproc
 
 ;.segment "DATA"
 
-STR_CHARINDEX: .byte 0
-STRING_POS: .byte 0
+STRZ_CHARINDEX: .byte 0
+STRZ_POS: .byte 0
 
 .endif ; _PRINTSTRINGZ_INC

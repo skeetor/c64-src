@@ -16,7 +16,7 @@ _MNEMONICS_INC = 1
 .endmacro
 
 ; branch equal far
-.macro fbeq address
+.macro lbeq address
 	.local @l1
 	bne @l1
 	jmp address
@@ -24,7 +24,7 @@ _MNEMONICS_INC = 1
 .endmacro
 
 ; branch not equal far
-.macro fbne address
+.macro lbne address
 	.local @l1
 	beq @l1
 	jmp address

@@ -7,11 +7,16 @@
 ; A - 1 = Skip first digit. This is needed when an uneven
 ;		number of digits is desired, otherwise it will always be
 ;		a multiple of 2 digits.
+; STRING_PTR - Pointer to the string
+; ShowLeadingZeroes - Set to 0 if they should be showed, $ff if
+;       spaces should be used.
+; LeftAligned - If set to $ff the digits start at the left
+;               side, otherwise set to 0
 ;
 ; Return:
 ; Y - Offset after the last char
 ; X - Number of digits not 0.
-
+; NumberOfDigits - Same as X
 
 .ifndef _BCDTOSTRING_INC
 _BCDTOSTRING_INC = 1
@@ -21,72 +26,114 @@ _BCDTOSTRING_INC = 1
 .proc BCDToString
 
 	pha
+	lda #$ff
+	sta LeadingZeroes
 	lda #$00
-	sta SKIP_LEADING_ZERO
-
+	sta NumberOfDigits
 	pla
+
+	; Should we start with the lowbyte?
 	cmp #$01
-	beq @SkipFirstDigit
+	beq @LoByte
 
-@Digit:
+@HiByte:
+	lda #$00
+	sta DigitToggle
 	lda BCDVal,x
-
-	clc
 	lsr
 	lsr
 	lsr
 	lsr
-	clc
-	adc #'0'
-	cmp #'0'
-	beq @CheckZero0
-	inc SKIP_LEADING_ZERO	; No longer leading zeroes
-	jmp @Store0
+	jmp @MakeDigit
 
-@CheckZero0:
-	bit SKIP_LEADING_ZERO
-	bne @Store0
-	lda #' '
-
-@Store0:
-	sta (STRING_PTR),y
-	iny
-
-@SkipFirstDigit:
+@LoByte:
+	lda #$ff
+	sta DigitToggle
 	lda BCDVal,x
 	and #$0f
+
+@MakeDigit:
 	clc
 	adc #'0'
 	cmp #'0'
-	beq @CheckZero1
-	sta SKIP_LEADING_ZERO	; No longer leading zeroes
-	jmp @Store1
+	beq @CheckZero
+	inc LeadingZeroes	; Clear leading zero marker
+	bpl @Store			; Not a zero so we can always store it
 
-@CheckZero1:
-	bit SKIP_LEADING_ZERO
-	bne @Store1
+@CheckZero:
+	; Check the hi-bit if we still have leading zeroes
+	bit LeadingZeroes
+	bpl @Store			; Not leading, so we have to store it
+
+	bit LeftAligned		; Skip leading zeroes
+	bmi @NextDigit
+
+	bit ShowLeadingZeroes ; Show leading zero or space? 
+	bpl @Store
 	lda #' '
 
-@Store1:
+@Store:
+	inc NumberOfDigits
 	sta (STRING_PTR),y
 	iny
 
-	dex
-	bpl @Digit
+@NextDigit:
+	bit DigitToggle
+	bpl @LoByte
 
-	; If the whole string was empty we write a 0.
+	dex
+	bpl @HiByte
+
+	; If the whole string was empty we write a single 0.
+	; This only happens if left aligned is set, as in the other
+	; case we will have either leading zeroes or blanks
+	ldx NumberOfDigits
+	bne @CheckBlanks
+
+	lda #'0'
+	sta (STRING_PTR),y
+	iny
+	inc NumberOfDigits
+	bne @Done			; Will always jump
+
+@CheckBlanks:
+	; If we are not left aligned, we have to check if the
+	; whole string consists of blanks. If ShowLeadingZeroes
+	; is enabled this can not happen and we are done.
+	bit ShowLeadingZeroes
+	bpl @Done
+
 	dey
 	lda (STRING_PTR),y
 	cmp #' '
-	bne @Done
+	bne @AlmostDone		; it is a digit so we can return
 	lda #'0'
 	sta (STRING_PTR),y
+	inc NumberOfDigits
+
+@AlmostDone:
+	iny
 
 @Done:
-	ldx SKIP_LEADING_ZERO
-	iny
+	ldx NumberOfDigits
 	rts
 
 .endproc
+
+;.segment "DATA"
+
+; Internal use
+
+; Set to $ff if the hiyte of a BCDValue is to be printed, otherwise $00 for the lowbyte
+DigitToggle: .byte 0
+; Marker to check if we are still having leading zerores ($ff).
+LeadingZeroes: .byte 0
+
+; Input parameters, can be set by the caller
+ShowLeadingZeroes: .byte 0
+LeftAligned: .byte 0
+
+; Return value: Number of digits printed. If leading zeroes are shown, they are included in the count.
+NumberOfDigits: .byte 0
 
 .endif ; _BCDTOSTRING_INC

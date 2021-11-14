@@ -10,6 +10,12 @@
 ; CONSOLE_PTR - position on the screen
 ; STRING_PTR - PETSCII string
 ;
+; RETURN:
+; A = 0 (Cancel)
+;
+; A = 1 (OK)
+; Y = Length of input string.
+;
 ; The caller can set the pointer CharFilterPtr
 ; to a function which can check KeyCode/KeyModifier
 ; to filter individual keys. If this function returns
@@ -118,12 +124,22 @@ EMPTY_CHAR		= 100	; '_'
 :	cmp #$03			; RUN-STOP
 	bne :+
 
+	ldy InputCursorPos
+	lda (CONSOLE_PTR),y
+	eor #$80
+	sta (CONSOLE_PTR),y
+
 	lda #$00
 	ldy InputCurLen
 	rts
 
 :	cmp #$0d			; ENTER
 	bne :+
+
+	ldy InputCursorPos
+	lda (CONSOLE_PTR),y
+	eor #$80
+	sta (CONSOLE_PTR),y
 
 	lda #$01
 	ldy InputCurLen
@@ -148,7 +164,7 @@ EMPTY_CHAR		= 100	; '_'
 	jmp (InputFilterPtr)
 
 :	cpy #$01
-	bne @KeyLoop
+	lbne @KeyLoop
 
 	; Add PETSCII character to string
 	jsr AddCharacter
@@ -396,10 +412,10 @@ MoveCursorLeft:
 ; AC - PETSCII char to be inserted
 ; Y - 0 means the char is to be ignored
 ;     1 the char is added to the string.
-InputFilterPtr:	.word DefaultInputFilter
 InputCursorPos: .byte 0
 InputCurLen: .byte 0
 InputMaxLen: .byte 0
 InputTmp: .byte 0
+InputFilterPtr:	.word DefaultInputFilter
 
 .endif ; _INPUT_INC
