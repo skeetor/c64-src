@@ -19,7 +19,6 @@ _READKEY_REPEAT_INC = 1
 
 @WaitKeyPress:
 	jsr ScanKeys
-	;jsr WaitKeyboardPressed
 	dey
 	beq @KeyPressed
 

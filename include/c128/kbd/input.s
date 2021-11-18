@@ -100,7 +100,7 @@ EMPTY_CHAR		= 100	; '_'
 	tay
 	tax
 	inx					; New Cursorpos
-	jsr MoveCursorRight
+	jsr InputMoveCursorRight
 	jmp @KeyLoop
 
 :	cmp #$9d			; CRSR-Left
@@ -118,7 +118,7 @@ EMPTY_CHAR		= 100	; '_'
 	tay
 	tax
 	dex					; New Cursorpos
-	jsr MoveCursorLeft
+	jsr InputMoveCursorLeft
 	jmp @KeyLoop
 
 :	cmp #$03			; RUN-STOP
@@ -150,12 +150,12 @@ EMPTY_CHAR		= 100	; '_'
 
 	; If the cursor is at the start
 	; we can't delete anymore.
-	jsr DeleteCharacter
+	jsr InputDeleteCharacter
 	jmp @KeyLoop
 
 :	cmp #$94			; INSERT
 	bne :+
-	jsr InsertCharacter
+	jsr InputInsertCharacter
 	jmp @KeyLoop
 
 :	sta InputTmp
@@ -167,14 +167,14 @@ EMPTY_CHAR		= 100	; '_'
 	lbne @KeyLoop
 
 	; Add PETSCII character to string
-	jsr AddCharacter
+	jsr InputAddCharacter
 	jmp @KeyLoop
 
 	rts
 .endproc
 
 ;------------------------------------------------
-.proc AddCharacter
+.proc InputAddCharacter
 	ldy InputCursorPos
 	sta (STRING_PTR),y
 	jsr PETSCIIToScreen
@@ -188,31 +188,31 @@ EMPTY_CHAR		= 100	; '_'
 	cmp InputCurLen
 	bne :+
 	inc InputCurLen
-:	jsr MoveCursorRight
+:	jsr InputMoveCursorRight
 
 @Done:
 	rts
 .endproc
 
 ;------------------------------------------------
-MoveCursorRight:
+InputMoveCursorRight:
 
 	cpx InputCurLen
-	blt MoveCursorLeft
+	blt InputMoveCursorLeft
 	ldx InputCurLen
 	cpx InputMaxLen
-	blt MoveCursorLeft
+	blt InputMoveCursorLeft
 	dex
 
-MoveCursorLeft:
+InputMoveCursorLeft:
 
 	; Switch off old cursor position
-	jsr ToggleCursor
+	jsr InputToggleCursor
 	sty InputCursorPos
 
 	rts
 
-.proc ToggleCursor
+.proc InputToggleCursor
 	lda (CONSOLE_PTR),y
 	eor #$80
 	sta (CONSOLE_PTR),y
@@ -288,7 +288,7 @@ MoveCursorLeft:
 ;----------------------------------------------------
 ; Delete the character at the current cursor position
 ; from the string and refresh the display accordingly.
-.proc DeleteCharacter
+.proc InputDeleteCharacter
 	; If the string has 0 length
 	; there is nothing to delete
 	lda InputCurLen
@@ -354,7 +354,7 @@ MoveCursorLeft:
 	rts
 .endproc
 
-.proc InsertCharacter
+.proc InputInsertCharacter
 	ldx InputCurLen
 	cpx InputMaxLen
 	bge @Done

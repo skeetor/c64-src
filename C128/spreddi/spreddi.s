@@ -21,6 +21,7 @@ LINE_OFFSET			= ZP_BASE+5
 MEMCPY_SRC			= ZP_BASE+6
 MEMCPY_TGT			= ZP_BASE+8
 MEMCPY_LEN			= ZP_BASE+10
+CURSOR_LINE			= ZP_BASE+12
 
 KEYTABLE_PTR		= $fb
 
@@ -145,6 +146,8 @@ basicstub:
 	jsr SpriteEditor
 
 @KeyLoop:
+	bit EditorWaitRelease
+	bmi @WaitKey
 	jsr WaitKeyboardRelease
 
 @WaitKey:
@@ -513,6 +516,8 @@ MAIN_APPLICATION = *
 	; Set the dimension of the sprite editing matrix
 	lda #3
 	sta EditColumnBytes
+	lda #24
+	sta EditColumns
 	lda #21
 	sta EditLines
 
@@ -575,6 +580,15 @@ MAIN_APPLICATION = *
 	lda SpriteColorValue+2
 	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
 
+	; Cursor position
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
+	ldy #0
+	sty EditCursorX
+	sty EditCursorY
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+
 	rts
 .endproc
 
@@ -585,50 +599,100 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SpriteEditorKeyboardHandler
-	ldx #$00
+	jsr ReadKeyRepeat
 
-	inx						; 01
-	lda LastKeyLine,x
-	cmp	#$01				; 3
-	lbeq IncSpriteColor3
+	; By default we assume that the
+	; keyboard should be released before we
+	; read the next key. Some functions, like
+	; CURSOR processing, disables this, as we
+	; want them to repeat. They have to reset
+	; this on their own.
+	lda #$00
+	sta EditorWaitRelease
+	
+	ldx KeyCode
+	lda KeyModifier
+	bne @KeyWithModifiers
 
-	cmp	#$20				; S
-	lbeq SaveSprites
+	cpx #$1d				; CRSR-Right
+	lbeq MoveCursorRight
+	cpx #$11				; CRSR-Down
+	lbeq MoveCursorDown
 
-	inx						; 02
-	lda LastKeyLine,x
-	cmp #$80				; X
-	beq TogglePreviewX
-	cmp #$10				; C
+	cpx #$43				; C
 	lbeq ClearPreviewSprite
 
-	inx						; 03
-	lda LastKeyLine,x
-	cmp #$02				; Y
-	beq TogglePreviewY
-
-	inx						; 04
-	lda LastKeyLine,x
-	cmp #$02				; I
+	cpx #$49				; I
 	lbeq InvertSprite
 
-	cmp #$10				; M
+	;cpx #$4c				; L
+	;lbeq LoadSprites
+	cpx #$53				; S
+	lbeq SaveSprites
+
+	cpx #$4d				; M
 	beq ToggleMulticolor
 
-	inx						; 05
-	lda LastKeyLine,x
-	cmp	#$04				; L
-	lbeq LoadSprites
+	cpx #$58				; X
+	beq TogglePreviewX
+	cpx #$59				; Y
+	beq TogglePreviewY
 
-	inx						; 06
-
-	inx						; 07
-	lda LastKeyLine,x
-	cmp	#$01				; 1
+	cpx #'1'
 	beq IncSpriteColor1
-	cmp	#$08				; 2
+	cpx #'2'
 	beq IncSpriteColor2
+	cpx #'3'
+	beq IncSpriteColor3
 
+	; Unused key
+	bne @Done
+
+@KeyWithModifiers:
+	and #KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT
+	bne @ShiftedKeys
+
+	lda KeyModifier
+	and #KEY_EXT
+	bne @ExtKeys
+
+	lda KeyModifier
+	and #KEY_COMMODORE
+	bne @CommodoreKeys
+
+	; Unused modifier
+	beq @Done
+
+@ShiftedKeys:
+	cpx #$9d				; CRSR-Left
+	beq MoveCursorLeft
+	cpx #$91				; CRSR-Up
+	lbeq MoveCursorUp
+
+	; Unused key
+	bne @Done
+
+@ExtKeys:
+	cpx #$1d				; CRSR-Right/Keypad
+	beq MoveCursorRight
+	cpx #$11				; CRSR-Down/Keypad
+	lbeq MoveCursorDown
+
+	cpx #$9d				; CRSR-Left/Keypad
+	beq MoveCursorLeft
+	cpx #$91				; CRSR-Up/Keypad
+	lbeq MoveCursorUp
+
+	cpx #$91				; Dummy for debug
+
+	; Unused key
+	bne @Done
+
+@CommodoreKeys:
+	; Unused key
+	bne @Done
+
+@Done:
 	rts
 .endproc
 
@@ -687,6 +751,121 @@ MAIN_APPLICATION = *
 	lda SpriteColorValue+2
 	sta VIC_SPR_MCOLOR1
 	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
+	rts
+.endproc
+
+.proc MoveCursorRight
+	ldy EditCursorX
+	tya
+	tax
+	inx
+	cpx EditColumns
+	blt MoveCursorHoriz
+
+	rts
+.endproc
+
+.proc MoveCursorLeft
+
+	lda EditCursorX
+	beq @Done
+
+	tay
+	tax
+	dex
+	jmp MoveCursorHoriz
+
+@Done:
+	rts
+.endproc
+
+; Move the cursor left/right
+; Y - Old position
+; X - New position
+.proc MoveCursorHoriz
+
+	lda (CURSOR_LINE),y
+	and #$7f
+	sta (CURSOR_LINE),y
+
+	txa
+	tay
+
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+
+	sty EditCursorX
+
+	; Enable repeat mode
+	lda #$80
+	sta EditorWaitRelease
+
+	rts
+.endproc
+
+.proc MoveCursorDown
+	ldy EditCursorY
+	iny
+	cpy EditLines
+	bge @Done
+
+	sty EditCursorY
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	and #$7f
+	sta (CURSOR_LINE),y
+
+	clc
+	lda CURSOR_LINE
+	adc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+	lda CURSOR_LINE+1
+	adc #$00
+	sta CURSOR_LINE+1
+
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+
+	; Enable repeat mode
+	lda #$80
+	sta EditorWaitRelease
+
+@Done:
+	rts
+.endproc
+
+.proc MoveCursorUp
+
+	ldy EditCursorY
+	beq @Done
+
+	dey
+	sty EditCursorY
+
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	and #$7f
+	sta (CURSOR_LINE),y
+
+	sec
+	lda CURSOR_LINE
+	sbc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+	lda CURSOR_LINE+1
+	sbc #$00
+	sta CURSOR_LINE+1
+
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+
+	; Enable repeat mode
+	lda #$80
+	sta EditorWaitRelease
+
+@Done:
 	rts
 .endproc
 
@@ -1957,12 +2136,21 @@ TMP_VAL_3: .word 0
 
 ; Number of lines/bytes to be printed as bits
 EditColumnBytes: .byte 0
+EditColumns: .byte 0
 EditLines: .byte 0
+EditCursorX: .byte 0
+EditCursorY: .byte 0
 
 ; Temp for drawing the edit box
 EditCurChar: .byte 0
 EditCurColumns: .byte 0
 EditCurLine: .byte 0
+
+; Functionpointer to the current keyboardhandler
+EditorKeyHandler: .word 0
+; Main loop should wait for keyboard release
+; before next key is read if bit 7 is set.
+EditorWaitRelease: .byte $00
 
 ; Keyboard handling
 LastKeyLine: .res KEY_LINES, $ff
@@ -1993,9 +2181,6 @@ EnterNumberConsolePtr: .word 0
 ; Temp for storing the current index in the spritebuffer
 ; while loading/saving.
 FilePosY: .byte 0
-
-; Functionpointer to the current keyboardhandler
-EditorKeyHandler: .word 0
 
 ; Characters to be used for the sprite preview border
 ; on the bottom line. This depends on the size, because
