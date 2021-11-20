@@ -22,6 +22,7 @@ MEMCPY_SRC			= ZP_BASE+6
 MEMCPY_TGT			= ZP_BASE+8
 MEMCPY_LEN			= ZP_BASE+10
 CURSOR_LINE			= ZP_BASE+12
+PIXEL_LINE			= ZP_BASE+14
 
 KEYTABLE_PTR		= $fb
 
@@ -31,6 +32,8 @@ KEY_LINES			= C128_KEY_LINES
 ; Position of the color text.
 COLOR_TXT_ROW = 12
 COLOR_TXT_COLUMN = 27
+; Position of the character that shows the selected color 
+
 
 ; Sprite editor constants
 ; =======================
@@ -41,14 +44,23 @@ SPRITE_PTR			= $7f8
 SPRITE_PREVIEW		= 0	; Number of the previewsprite
 SPRITE_CURSOR		= 1	; Number of the cursor sprite
 
-SPRITE_BUFFER_LEN	= 64
-SPRITE_BASE			= $2000		; Sprite data pointer for first frame.
-SPRITE_USER_START	= SPRITE_BASE+2*SPRITE_BUFFER_LEN	; First two sprite blocks are reserved
+SPRITE_BUFFER_LEN	= 3*21
+SPRITE_BASE			= $2000		; Sprite data pointer for preview.
+SPRITE_USER_START	= SPRITE_BASE+2*SPRITE_BUFFER_LEN	; First two sprite frames are reserved
+SPRITE_PREVIEW_BUFFER = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
 SPRITE_END			= $5000
 MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
 MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The first frame
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
+
+; Flags for copying sprites from/to the preview buffer
+SPRITE_PREVIEW_SRC	= $01
+SPRITE_PREVIEW_TGT	= $02
+
+
+; Editor bit flags
+EDIT_DIRTY			= $01
 
 SPRITE_COLOR		= VIC_SPR0_COLOR
 SPRITE_EXP_X		= VIC_SPR_EXP_X
@@ -121,18 +133,14 @@ basicstub:
 	; Enable preview sprite
 	lda #(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)/SPRITE_BUFFER_LEN			; Sprite data address
 	sta SPRITE_PTR+SPRITE_PREVIEW
-	lda #(1 << SPRITE_PREVIEW)
-	sta VIC_SPR_ENA		; Enable sprite 0
-	lda SpriteColorValue
-	sta SPRITE_COLOR+SPRITE_PREVIEW
 
 	ldx #$00
+	stx EditFlags
 	stx CurFrame
 	stx MaxFrame
 	jsr TogglePreviewX
 	jsr TogglePreviewY
 
-	; Switch to Sprite editor
 	ldx #$00			; No editor maxtrix update
 	jsr ClearPreviewSprite
 
@@ -143,6 +151,7 @@ basicstub:
 	ldy #SPRITE_BUFFER_LEN
 	jsr memcpy255
 
+	; Now switch to sprite editor as default
 	jsr SpriteEditor
 
 @KeyLoop:
@@ -520,6 +529,11 @@ MAIN_APPLICATION = *
 	sta EditColumns
 	lda #21
 	sta EditLines
+	lda #SPRITE_BUFFER_LEN
+	sta EditFrameSize
+
+	lda #(1 << SPRITE_PREVIEW)
+	sta VIC_SPR_ENA		; Enable preview sprite
 
 	jsr UpdateFrame
 
@@ -551,43 +565,19 @@ MAIN_APPLICATION = *
 	ldy #26
 	jsr PrintStringZ
 
-	; Print the color choice
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)), CONSOLE_PTR
-	SetPointer ColorTxt, STRING_PTR
-	ldx #2
-
-@ColorSelection:
-	stx $50
-	ldy #COLOR_TXT_COLUMN
-	jsr PrintStringZ
-	ldx $50
-	txa
-	clc
-	adc #'1'
-	ldy #COLOR_TXT_COLUMN+5
-	sta (CONSOLE_PTR),y
-	ldy #COLOR_TXT_COLUMN+8
-	lda #81		; Inverse O
-	sta (CONSOLE_PTR),y
-	jsr PrevLine
-	dex
-	bpl @ColorSelection
-
-	lda SpriteColorValue
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*COLOR_TXT_ROW+COLOR_TXT_COLUMN+8
-	lda SpriteColorValue+1
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN+8
-	lda SpriteColorValue+2
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
-
 	; Cursor position
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
+	SetPointer SPRITE_PREVIEW_BUFFER, PIXEL_LINE
+
 	ldy #0
 	sty EditCursorX
 	sty EditCursorY
 	lda (CURSOR_LINE),y
 	ora #$80
 	sta (CURSOR_LINE),y
+
+	lda #$00
+	jsr SpriteColorMode
 
 	rts
 .endproc
@@ -619,9 +609,18 @@ MAIN_APPLICATION = *
 	cpx #$11				; CRSR-Down
 	lbeq MoveCursorDown
 
-	cpx #$43				; C
+	cpx #$20				; SPACE
+	lbeq ToggleSpritePixel
+
+	cpx #$14				; DEL
 	lbeq ClearPreviewSprite
 
+	cpx #$13				; HOME
+	bne :+
+	lda #$01
+	jmp MoveCursorHome
+
+:
 	cpx #$49				; I
 	lbeq InvertSprite
 
@@ -639,11 +638,11 @@ MAIN_APPLICATION = *
 	beq TogglePreviewY
 
 	cpx #'1'
-	beq IncSpriteColor1
+	lbeq IncSpriteColor1
 	cpx #'2'
-	beq IncSpriteColor2
+	lbeq IncSpriteColor2
 	cpx #'3'
-	beq IncSpriteColor3
+	lbeq IncSpriteColor3
 
 	; Unused key
 	bne @Done
@@ -665,7 +664,7 @@ MAIN_APPLICATION = *
 
 @ShiftedKeys:
 	cpx #$9d				; CRSR-Left
-	beq MoveCursorLeft
+	lbeq MoveCursorLeft
 	cpx #$91				; CRSR-Up
 	lbeq MoveCursorUp
 
@@ -674,12 +673,12 @@ MAIN_APPLICATION = *
 
 @ExtKeys:
 	cpx #$1d				; CRSR-Right/Keypad
-	beq MoveCursorRight
+	lbeq MoveCursorRight
 	cpx #$11				; CRSR-Down/Keypad
 	lbeq MoveCursorDown
 
 	cpx #$9d				; CRSR-Left/Keypad
-	beq MoveCursorLeft
+	lbeq MoveCursorLeft
 	cpx #$91				; CRSR-Up/Keypad
 	lbeq MoveCursorUp
 
@@ -717,7 +716,75 @@ MAIN_APPLICATION = *
 .proc ToggleMulticolor
 	lda	VIC_SPR_MCOLOR
 	eor #(1 << SPRITE_PREVIEW)
+.endproc
+
+.proc SpriteColorMode
+
 	sta VIC_SPR_MCOLOR
+
+	and #(1 << SPRITE_PREVIEW)
+	beq @SingleMode
+
+	; Print three colors
+	lda #$01
+	ldx #3
+	jmp @Print
+
+@SingleMode:
+	; Clear color 2+3
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN), CONSOLE_PTR
+
+	lda #' '
+	ldx #2
+
+@ClearLine:
+	ldy #ColorTxtLen+2
+
+@Clear:
+	sta (CONSOLE_PTR),y
+	dey
+	bpl @Clear
+	jsr NextLine
+	lda #' '
+	dex
+	bne @ClearLine
+
+	; Print only color 1
+	lda #$01
+	ldx #1
+
+@Print:
+.endproc
+
+.proc PrintSpriteColor
+
+	; Print the color choice
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW)), CONSOLE_PTR
+	SetPointer ColorTxt, STRING_PTR
+	stx TMP_VAL_1
+	ldx #$01
+
+@ColorSelection:
+	ldy #COLOR_TXT_COLUMN
+	jsr PrintStringZ
+	txa
+	clc
+	adc #'0'
+	ldy #COLOR_TXT_COLUMN+ColorTxtLen
+	sta (CONSOLE_PTR),y
+	ldy #COLOR_TXT_COLUMN+ColorTxtLen+2
+	lda #81		; Inverse O
+	sta (CONSOLE_PTR),y
+	jsr NextLine
+
+	inx
+	cpx TMP_VAL_1
+	ble @ColorSelection
+
+	jsr SetSpriteColor1
+	jsr SetSpriteColor2
+	jsr SetSpriteColor3
+
 	rts
 .endproc
 
@@ -754,6 +821,28 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+.proc MoveCursorHome
+	cmp #$00
+	beq @GoHome
+
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	and #$7f
+	sta (CURSOR_LINE),y
+
+@GoHome:
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
+
+	ldy #$00
+	sty EditCursorX
+	sty EditCursorY
+
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+	rts
+.endproc
+
 .proc MoveCursorRight
 	ldy EditCursorX
 	tya
@@ -762,18 +851,43 @@ MAIN_APPLICATION = *
 	cpx EditColumns
 	blt MoveCursorHoriz
 
+	; Already last line?
+	ldy EditCursorY
+	iny
+	cpy EditLines
+	bge @Done
+
+	ldy EditCursorX
+	ldx #$00
+	jsr MoveCursorHoriz
+	jmp MoveCursorDown
+
+@Done:
 	rts
 .endproc
 
 .proc MoveCursorLeft
 
 	lda EditCursorX
-	beq @Done
+	beq @ToPrevLine
 
 	tay
 	tax
 	dex
 	jmp MoveCursorHoriz
+
+@ToPrevLine:
+	; First line, so we stop
+	ldx EditCursorY
+	beq @Done
+
+	; Otherwise we move to end of line
+	; and one line up
+	ldx EditColumns
+	dex
+	ldy EditCursorX
+	jsr MoveCursorHoriz
+	jmp MoveCursorUp
 
 @Done:
 	rts
@@ -824,6 +938,15 @@ MAIN_APPLICATION = *
 	adc #$00
 	sta CURSOR_LINE+1
 
+	; Go to next line
+	clc
+	lda PIXEL_LINE
+	adc EditColumnBytes
+	sta PIXEL_LINE
+	lda PIXEL_LINE+1
+	adc #$00
+	sta PIXEL_LINE+1
+
 	lda (CURSOR_LINE),y
 	ora #$80
 	sta (CURSOR_LINE),y
@@ -856,6 +979,15 @@ MAIN_APPLICATION = *
 	lda CURSOR_LINE+1
 	sbc #$00
 	sta CURSOR_LINE+1
+
+	; Go to previous line
+	sec
+	lda PIXEL_LINE
+	sbc EditColumnBytes
+	sta PIXEL_LINE
+	lda PIXEL_LINE+1
+	sbc #$00
+	sta PIXEL_LINE+1
 
 	lda (CURSOR_LINE),y
 	ora #$80
@@ -1242,35 +1374,11 @@ MAIN_APPLICATION = *
 .proc UpdateFrame
 
 	lda CurFrame
-	jsr CalcFramePointer
-
-	lda FramePtr
-	sta MEMCPY_SRC
-	lda FramePtr+1
-	sta MEMCPY_SRC+1
-
-	lda #<(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta MEMCPY_TGT
-	sta DATA_PTR
-	lda #>(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	sta MEMCPY_TGT+1
-	sta DATA_PTR+1
-	jsr CopyFrame
+	ldx #0
+	ldy #SPRITE_PREVIEW_TGT
+	jsr CopySpriteFrame
 
 	jmp DrawBitMatrix
-.endproc
-
-; Copy a sprite frame from MEMCPY_SRC to MEMCPY_TGT.
-.proc CopyFrame
-	ldy #SPRITE_BUFFER_LEN-1
-
-@Loop:
-	lda (MEMCPY_SRC),y
-	sta (MEMCPY_TGT),y
-	dey
-	bpl @Loop
-
-	rts
 .endproc
 
 ; Calculate the sprite buffer address for the specified frame.
@@ -1320,9 +1428,12 @@ MAIN_APPLICATION = *
 	cpx #$00
 	beq @NoUpdate
 
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	lda #$00
+	jmp MoveCursorHome
 
 @NoUpdate:
+
 	rts
 
 .endproc
@@ -1344,14 +1455,25 @@ MAIN_APPLICATION = *
 
 .endproc
 
-; Copy the sprite buffer from source to traget
+; Copy the sprite buffer from source to target
 ;
 ; PARAM:
 ; A - Source frame
 ; X - Target frame
+; Y - 0 = Normal copy
+;     SPRITE_PREVIEW_SRC
+;     SPRITE_PREVIEW_TGT
 .proc CopySpriteFrame
 
-	pha
+	; Remember the source
+	sta MEMCPY_SRC
+	tya
+	and #SPRITE_PREVIEW_TGT
+	beq @CalcTarget
+	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_TGT
+	jmp @CheckSrc
+
+@CalcTarget:
 	txa
 	jsr CalcFramePointer
 
@@ -1360,12 +1482,22 @@ MAIN_APPLICATION = *
 	lda FramePtr+1
 	sta MEMCPY_TGT+1
 
-	pla
+@CheckSrc:
+	tya
+	and #SPRITE_PREVIEW_SRC
+	beq @CalcSrc
+	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_SRC
+	jmp @Copy
+
+@CalcSrc:
+	lda MEMCPY_SRC
 	jsr CalcFramePointer
 	lda FramePtr
 	sta MEMCPY_SRC
 	lda FramePtr+1
 	sta MEMCPY_SRC+1
+
+@Copy:
 	ldy #SPRITE_BUFFER_LEN
 	jmp memcpy255
 
@@ -1554,7 +1686,77 @@ MAIN_APPLICATION = *
 .endproc
 .endif
 
+.proc ToggleSpritePixel
+	jsr SetDirty
+
+	ldy #$00			; Byte index
+	lda EditCursorX
+	cmp #8
+	blt @GetPixelMask
+	iny
+	sec
+	sbc #$08
+	cmp #8
+	blt @GetPixelMask
+	iny
+	sec
+	sbc #$08
+
+	; Now we have the bitnumber in A
+	; 0 - Leftmost
+	; 7 - Rightmost
+@GetPixelMask:
+	tax
+	lda #$80
+	cpx #$00
+	beq @ToggleBit
+
+@FindBitMask:
+	clc
+	lsr
+	dex
+	bne @FindBitMask
+
+@ToggleBit:
+	; Save our bitmask temporarily
+	sta TMP_VAL_0
+	lda (PIXEL_LINE),y
+	eor TMP_VAL_0
+	sta (PIXEL_LINE),y
+
+.endproc
+
+.proc ToggleCursorPixel
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	eor #$04			; Toggle bewtween highlighted '.' and '*'
+	sta (CURSOR_LINE),y
+
+	jmp MoveCursorRight
+.endproc
+
+.proc SetDirty
+	lda EditFlags
+	ora #EDIT_DIRTY
+	sta EditFlags
+	rts
+.endproc
+
+.proc ClearDirty
+	lda EditFlags
+	and #$ff ^ EDIT_DIRTY
+	sta EditFlags
+	rts
+.endproc
+
 .proc SaveSprites
+
+	; Copy the current edit buffer to the sprite frame buffer
+	lda #0
+	ldx CurFrame
+	ldy #SPRITE_PREVIEW_SRC
+	jsr CopySpriteFrame
+	jsr ClearDirty
 
 	jsr WaitKeyboardRelease
 	jsr GetSpriteSaveInfo
@@ -1728,13 +1930,6 @@ MAIN_APPLICATION = *
 	SetPointer DriveTxt, STRING_PTR
 	ldy #20
 	jsr PrintStringZ
-
-	;SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+11), CONSOLE_PTR
-	;SetPointer DriveTxt, STRING_PTR
-	;lda #0
-	;ldx MaxFrame
-	;ldy #10					; Skip "SAVE FRAME:"
-	;jsr PrintFrameCounter
 
 	SetPointer EnterNumberStr, STRING_PTR
 
@@ -2135,11 +2330,14 @@ TMP_VAL_2: .word 0
 TMP_VAL_3: .word 0
 
 ; Number of lines/bytes to be printed as bits
+EditFlags:		.byte 0
 EditColumnBytes: .byte 0
 EditColumns: .byte 0
 EditLines: .byte 0
 EditCursorX: .byte 0
 EditCursorY: .byte 0
+; Size of a framebuffer. 64 for a sprite and 8 for a character
+EditFrameSize: .byte 0
 
 ; Temp for drawing the edit box
 EditCurChar: .byte 0
@@ -2162,10 +2360,10 @@ DiskDrive: .byte 8
 FilenameLen: .byte FilenameDefaultLen
 Filename: .byte "SPRITEDATA"
 FilenameDefaultLen = *-Filename
-		.res 21-FilenameDefaultLen,0
+		.res 21-FilenameDefaultLen,0	; Excess placeholder for the filename
 
 FileFrameStart: .byte 1		; first frame to save
-FileFrameEnd: .byte 0	; last frame to save
+FileFrameEnd: .byte 0		; last frame to save
 
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberMsgLen = *-EnterNumberMsg
@@ -2193,8 +2391,9 @@ FrameTxt: .byte "FRAME:  1/  1",0
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
-ColorTxt: .byte "COLOR :",0
-SpriteColorValue: .byte COL_LIGHT_GREY, 1, 2
+ColorTxt: .byte "COLOR:",0
+ColorTxtLen = *-ColorTxt-1
+SpriteColorValue: .byte COL_LIGHT_GREY, COL_GREEN, COL_BLUE
 
 CanceledTxt:	.byte "           OPERATION CANCELED           ",0
 FilenameTxt:	.byte "FILENAME: ",0

@@ -25,6 +25,7 @@ _PRINTSTRINGZ_INC = 1
 
 	sty STRZ_POS
 	ldy #$00
+	sty STRZ_CHARINDEX
 
 @Loop:
 	lda (STRING_PTR),y
@@ -32,12 +33,10 @@ _PRINTSTRINGZ_INC = 1
 	rts
 
 @Print:
-	iny
-	sty STRZ_CHARINDEX
 	ldy STRZ_POS
 	sta (CONSOLE_PTR),y
-	iny
-	sty STRZ_POS
+	inc STRZ_POS
+	inc STRZ_CHARINDEX
 	ldy STRZ_CHARINDEX
 	jmp @Loop
 
