@@ -279,9 +279,13 @@ basicstub:
 
 	jsr CopyKeytables
 
+	; Reset all sprite expansions
 	lda	#$00
 	sta SPRITE_EXP_X
 	sta SPRITE_EXP_Y
+
+	; Init the default keyboardhandler
+	SetPointer (EditorKeyboardHandler), EditorKeyHandler
 
 	rts
 
@@ -545,7 +549,6 @@ MAIN_APPLICATION = *
 	jsr SpritePreviewBorder
 
 	; Print the frame text
-	SetPointer (SpriteEditorKeyboardHandler), EditorKeyHandler
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*1), CONSOLE_PTR
 	SetPointer FrameTxt, STRING_PTR
 	ldy #26
@@ -581,6 +584,9 @@ MAIN_APPLICATION = *
 	lda #$00
 	jsr SpriteColorMode
 
+	; The keymap for the sprite editing functions
+	SetPointer SpriteEditorKeyMap, KeyMapBasePtr
+
 	rts
 .endproc
 
@@ -590,7 +596,7 @@ MAIN_APPLICATION = *
 
 .endproc
 
-.proc SpriteEditorKeyboardHandler
+.proc EditorKeyboardHandler
 	jsr ReadKeyRepeat
 
 	; By default we assume that the
@@ -601,100 +607,55 @@ MAIN_APPLICATION = *
 	; this on their own.
 	lda #$00
 	sta EditorWaitRelease
-	
-	ldx KeyCode
-	lda KeyModifier
-	bne @KeyWithModifiers
+.endproc
 
-	cpx #$1d				; CRSR-Right
-	lbeq MoveCursorRight
-	cpx #$11				; CRSR-Down
-	lbeq MoveCursorDown
+.proc CheckKeyMap
 
-	cpx #$20				; SPACE
-	lbeq ToggleSpritePixel
+	lda KeyMapBasePtr
+	sta KEYMAP_PTR
+	lda KeyMapBasePtr+1
+	sta KEYMAP_PTR+1
 
-	cpx #$14				; DEL
-	lbeq ClearPreviewSprite
+@CheckKeyLoop:
+	ldy #0
+	lda (KEYMAP_PTR),y
+	cmp KeyModifier
+	bne @NextKey
 
-	cpx #$13				; HOME
-	lbeq MoveCursorHome
+@CheckKey:
+	iny
+	lda (KEYMAP_PTR),y
+	cmp KeyCode
+	bne @NextKey
 
-	cpx #$49				; I
-	lbeq InvertSprite
+	; We found a valid key combination, so we execute
+	; the handler.
+	ldy #$02
+	lda (KEYMAP_PTR),y
+	sta KeyMapFunction
+	iny
+	lda (KEYMAP_PTR),y
+	sta KeyMapFunction+1
+	jmp (KeyMapFunction)
 
-	cpx #$4e				; N
-	lbeq AppendFrame
+@NextKey:
+	clc
+	lda KEYMAP_PTR
+	adc #$04
+	sta KEYMAP_PTR
+	lda KEYMAP_PTR+1
+	adc #$00
+	sta KEYMAP_PTR+1
 
-	;cpx #$4c				; L
-	;lbeq LoadSprites
-	cpx #$53				; S
-	lbeq SaveSprites
-
-	cpx #$4d				; M
-	lbeq ToggleMulticolor
-
-	cpx #$58				; X
-	beq TogglePreviewX
-	cpx #$59				; Y
-	beq TogglePreviewY
-
-	cpx #'1'
-	lbeq IncSpriteColor1
-	cpx #'2'
-	lbeq IncSpriteColor2
-	cpx #'3'
-	lbeq IncSpriteColor3
-
-	; Unused key
-	bne @Done
-
-@KeyWithModifiers:
-	and #KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT
-	bne @ShiftedKeys
-
-	lda KeyModifier
-	and #KEY_EXT
-	bne @ExtKeys
-
-	lda KeyModifier
-	and #KEY_COMMODORE
-	bne @CommodoreKeys
-
-	; Unused modifier
-	beq @Done
-
-@ShiftedKeys:
-	cpx #$9d				; CRSR-Left
-	lbeq MoveCursorLeft
-	cpx #$91				; CRSR-Up
-	lbeq MoveCursorUp
-
-	; Unused key
-	bne @Done
-
-@ExtKeys:
-	cpx #$1d				; CRSR-Right/Keypad
-	lbeq MoveCursorRight
-	cpx #$11				; CRSR-Down/Keypad
-	lbeq MoveCursorDown
-
-	cpx #$9d				; CRSR-Left/Keypad
-	lbeq MoveCursorLeft
-	cpx #$91				; CRSR-Up/Keypad
-	lbeq MoveCursorUp
-
-	cpx #$91				; Dummy for debug
-
-	; Unused key
-	bne @Done
-
-@CommodoreKeys:
-	; Unused key
-	bne @Done
-
-@Done:
+	; If the functionpointer is a nullptr we have reached the end of the map.
+	ldy #$02
+	lda (KEYMAP_PTR),y
+	bne @CheckKeyLoop
+	iny
+	lda (KEYMAP_PTR),y
+	bne @CheckKeyLoop
 	rts
+
 .endproc
 
 .proc Flash
@@ -1477,6 +1438,14 @@ MAIN_APPLICATION = *
 
 	jmp DrawBitMatrix
 
+.endproc
+
+.proc NextFrame
+	rts
+.endproc
+
+.proc PreviousFrame
+	rts
 .endproc
 
 ; Create a new frame at the end and switch to it.
@@ -2499,35 +2468,48 @@ ErrorFileIOTxt: .byte "FILE I/O ERROR",0
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
 ; This map contains the modifier, keycode and the function to trigger
-SpriteEditorKeyMap:
-	.byte 0, $20	; SPACE
-	.word ToggleSpritePixel
+KeyMapBasePtr: .word 0
+KeyMapFunction: .word 0
 
-.if 0
-; TODO: Just for early debugging. Can be removed
-SpriteBuffer: 
-	.byte $00, $3c, $0f
-	.byte $01, $3c, $0f
-	.byte $02, $3c, $0f
-	.byte $04, $3c, $0f
-	.byte $08, $3c, $0f
-	.byte $10, $3c, $0f
-	.byte $20, $3c, $0f
-	.byte $40, $3c, $0f
-	.byte $80, $3c, $0f
-	.byte $81, $3c, $0f
-	.byte $82, $3c, $0f
-	.byte $84, $3c, $0f
-	.byte $88, $3c, $0f
-	.byte $90, $3c, $0f
-	.byte $a0, $3c, $0f
-	.byte $c0, $3c, $0f
-	.byte $c1, $3c, $0f
-	.byte $c2, $3c, $0f
-	.byte $c4, $3c, $0f
-	.byte $c8, $3c, $0f
-	.byte $d0, $3c, $0f
-.endif
+.macro  DefineKey	Modifier, Code, Function
+	.byte Modifier, Code
+	.word Function
+.endmacro
+
+SpriteEditorKeyMap:
+	DefineKey 0, $20, ToggleSpritePixel				; SPACE
+	DefineKey 0, $1d, MoveCursorRight				; CRSR-Right
+	DefineKey 0, $11, MoveCursorDown				; CRSR-Down
+	DefineKey 0, $2c, PreviousFrame					; ,
+	DefineKey 0, $2e, NextFrame						; .
+	DefineKey 0, $14, ClearPreviewSprite			; DEL
+	DefineKey 0, $13, MoveCursorHome				; HOME
+	DefineKey 0, $49, InvertSprite					; I
+	DefineKey 0, $4e, AppendFrame					; N
+	;DefineKey 0, $4c, LoadSprites					; L
+	DefineKey 0, $53, SaveSprites					; S
+	DefineKey 0, $4d, ToggleMulticolor				; M
+	DefineKey 0, $58, TogglePreviewX				; X
+	DefineKey 0, $59, TogglePreviewY				; Y
+	DefineKey 0, '1', IncSpriteColor1				; 1
+	DefineKey 0, '2', IncSpriteColor2				; 2
+	DefineKey 0, '3', IncSpriteColor3				; 3
+
+	; SHIFT keys
+	;DefineKey KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $9d, MoveCursorLeft	; CRSR-Left
+	;DefineKey KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $91, MoveCursorUp		; CRSR-Up
+
+	; Extended keys
+	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad
+	DefineKey KEY_EXT, $9d, MoveCursorLeft			; CRSR-Left/Keypad
+	DefineKey KEY_EXT, $11, MoveCursorDown			; CRSR-Down/Keypad
+	DefineKey KEY_EXT, $91, MoveCursorUp			; CRSR-Up/Keypad
+
+	DefineKey KEY_EXT|KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $1d, PreviousFrame			; CRSR-Right/Keypad
+	DefineKey KEY_EXT|KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $9d, NextFrame				; CRSR-Left/Keypad
+
+	; End of map
+	DefineKey 0,0,0
 
 KeyTableLen = KEY_LINES*8
 KeyTables = *

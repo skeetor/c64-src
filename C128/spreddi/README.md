@@ -17,7 +17,9 @@ X - Toggle Width<br>
 Y - Toggle Heigth<br>
 *SPC - Toggle bit<br>
 *CRSR Left/Right/Up/Down - Move cursor in edit grid<br>
-*SHIFT CRSR Left/Right - next/previous frame<br>
+*SHIFT EXT CRSR Left/Right - next/previous frame<br>
+		Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left
+		is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.<br>
 *COMMODORE CRSR Left/Right - Copy frame to next/previous<br>
 HOME - Cursor to top first pixel
 DEL - Clear grid<br>
