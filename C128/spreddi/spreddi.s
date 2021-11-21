@@ -10,14 +10,13 @@
 .include "tools/intrinsics.inc"
 
 ; Zeropage variables
+CONSOLE_PTR			= SCREEN_PTR	; $e0
+
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
-CONSOLE_PTR			= SCREEN_PTR	; $e0
 DATA_PTR			= ZP_BASE+0
 STRING_PTR			= ZP_BASE+2
-FILE_FRAME			= ZP_BASE+4
-LINE_OFFSET			= ZP_BASE+5
-
+KEYMAP_PTR			= ZP_BASE+4
 MEMCPY_SRC			= ZP_BASE+6
 MEMCPY_TGT			= ZP_BASE+8
 MEMCPY_LEN			= ZP_BASE+10
@@ -40,11 +39,12 @@ COLOR_TXT_COLUMN = 27
 SCREEN_VIC			= $0400
 SCREEN_COLUMNS		= 40
 SCREEN_LINES		= 23
+STATUS_LINE			= SCREEN_LINES-1
 SPRITE_PTR			= $7f8
 SPRITE_PREVIEW		= 0	; Number of the previewsprite
 SPRITE_CURSOR		= 1	; Number of the cursor sprite
 
-SPRITE_BUFFER_LEN	= 3*21
+SPRITE_BUFFER_LEN	= 64
 SPRITE_BASE			= $2000		; Sprite data pointer for preview.
 SPRITE_USER_START	= SPRITE_BASE+2*SPRITE_BUFFER_LEN	; First two sprite frames are reserved
 SPRITE_PREVIEW_BUFFER = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
@@ -53,6 +53,7 @@ MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
 MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The first frame
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
+
 
 ; Flags for copying sprites from/to the preview buffer
 SPRITE_PREVIEW_SRC	= $01
@@ -112,7 +113,7 @@ basicstub:
 
 	jsr Setup
 
-	lda #$00
+	lda #COL_BLACK
 	sta VIC_BORDERCOLOR
 	sta VIC_BG_COLOR0
 
@@ -141,15 +142,16 @@ basicstub:
 	jsr TogglePreviewX
 	jsr TogglePreviewY
 
-	ldx #$00			; No editor maxtrix update
-	jsr ClearPreviewSprite
-
 	; Clear the first frame on startup so we start with
 	; a clean editor.
 	SetPointer (SPRITE_BASE), MEMCPY_SRC
 	SetPointer (SPRITE_USER_START), MEMCPY_TGT
 	ldy #SPRITE_BUFFER_LEN
 	jsr memcpy255
+
+	; Clear the buffer on frame update
+	lda #$01
+	sta EditClearPreview
 
 	; Now switch to sprite editor as default
 	jsr SpriteEditor
@@ -535,7 +537,7 @@ MAIN_APPLICATION = *
 	lda #(1 << SPRITE_PREVIEW)
 	sta VIC_SPR_ENA		; Enable preview sprite
 
-	jsr UpdateFrame
+	jsr UpdateFrameEditor
 
 	lda #CHAR_SPLIT_TOP
 	sta SCREEN_VIC+24+1
@@ -616,13 +618,13 @@ MAIN_APPLICATION = *
 	lbeq ClearPreviewSprite
 
 	cpx #$13				; HOME
-	bne :+
-	lda #$01
-	jmp MoveCursorHome
+	lbeq MoveCursorHome
 
-:
 	cpx #$49				; I
 	lbeq InvertSprite
+
+	cpx #$4e				; N
+	lbeq AppendFrame
 
 	;cpx #$4c				; L
 	;lbeq LoadSprites
@@ -630,7 +632,7 @@ MAIN_APPLICATION = *
 	lbeq SaveSprites
 
 	cpx #$4d				; M
-	beq ToggleMulticolor
+	lbeq ToggleMulticolor
 
 	cpx #$58				; X
 	beq TogglePreviewX
@@ -692,6 +694,17 @@ MAIN_APPLICATION = *
 	bne @Done
 
 @Done:
+	rts
+.endproc
+
+.proc Flash
+	lda #COL_RED
+	sta VIC_BORDERCOLOR
+
+	jsr Delay
+
+	lda #COL_BLACK
+	sta VIC_BORDERCOLOR
 	rts
 .endproc
 
@@ -822,17 +835,17 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc MoveCursorHome
-	cmp #$00
-	beq @GoHome
 
+	; Clear old cursor
 	ldy EditCursorX
 	lda (CURSOR_LINE),y
 	and #$7f
 	sta (CURSOR_LINE),y
 
-@GoHome:
+	; Reset line pointer ...
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
 
+	; ... and set cursor.
 	ldy #$00
 	sty EditCursorX
 	sty EditCursorY
@@ -1029,7 +1042,7 @@ MAIN_APPLICATION = *
 
 	SetPointer PREVIEW_POS_BIG, CONSOLE_PTR
 	lda #SCREEN_COLUMNS
-	sta LINE_OFFSET
+	sta RectangleLineOffset
 	lda #' '
 	jsr FillRectangle
 
@@ -1141,8 +1154,6 @@ MAIN_APPLICATION = *
 
 .proc CharEditor
 
-	;SetPointer SpriteBuffer, DATA_PTR
-
 	lda #$01
 	sta EditColumnBytes
 	lda #$08
@@ -1166,15 +1177,14 @@ MAIN_APPLICATION = *
 .proc ClearScreen
 
 	SetPointer SCREEN_VIC, CONSOLE_PTR
-	lda #SCREEN_COLUMNS
-	sta LINE_OFFSET
+	ldy #SCREEN_COLUMNS
+	sty RectangleLineOffset
 
 	lda #' '
 	ldy #SCREEN_COLUMNS
 	ldx #SCREEN_LINES+2
-	jsr FillRectangle
+	jmp FillRectangle
 
-	rts
 .endproc
 
 ; =================================================
@@ -1285,19 +1295,21 @@ MAIN_APPLICATION = *
 ; caller must adjust the edges if appropriate.
 ;
 ; PARAMS:
-; DATA_PTR - pointer to the data
 ; EditColumnBytes - number of columnbytes (1 = 8 columns, 2 = 16 columns, etc.)
 ; EditLines - number of lines
 ;
 ; Locals:
 ; CONSOLE_PTR - pointer to the screen position
 ; EditCurChar - Current datavalue
+; TMP_VAL_0 - Number of editor bytes per line 
 ; TMP_VAL_0 - Temporary
 
 .proc DrawBitMatrix
 
 	; Editormatrix screen position
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CONSOLE_PTR
+	SetPointer (SPRITE_PREVIEW_BUFFER), DATA_PTR
+
 	lda EditLines
 	sta EditCurLine
 
@@ -1371,14 +1383,36 @@ MAIN_APPLICATION = *
 
 ; Copy the current frame to the preview sprite buffer
 ; and update the editing matrix.
-.proc UpdateFrame
+.proc UpdateFrameEditor
 
+	; Copy current sprite to preview
+	lda EditClearPreview
+	cmp #$00
+	beq @DoCopy
+
+	; Clear flag
+	lda #$00
+	sta EditClearPreview
+	jsr ClearPreviewSprite
+	jmp @UpdateFrame
+
+@DoCopy:
 	lda CurFrame
-	ldx #0
 	ldy #SPRITE_PREVIEW_TGT
 	jsr CopySpriteFrame
 
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	jsr MoveCursorHome
+
+@UpdateFrame:
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*1), STRING_PTR
+
+	lda CurFrame
+	ldx MaxFrame
+	ldy #32
+	jmp PrintFrameCounter
+
 .endproc
 
 ; Calculate the sprite buffer address for the specified frame.
@@ -1416,43 +1450,81 @@ MAIN_APPLICATION = *
 ; Clear the preview sprite buffer
 .proc ClearPreviewSprite
 
-	SetPointer (SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN), DATA_PTR
 	lda #$00
 	ldy #SPRITE_BUFFER_LEN-1
 
 @Loop:
-	sta (DATA_PTR),y
+	sta SPRITE_PREVIEW_BUFFER,y
 	dey
 	bpl @Loop
 
-	cpx #$00
-	beq @NoUpdate
-
 	jsr DrawBitMatrix
-	lda #$00
 	jmp MoveCursorHome
-
-@NoUpdate:
-
-	rts
 
 .endproc
 
 ; Invert the preview sprite buffer
 .proc InvertSprite
 
-	SetPointer (SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN), DATA_PTR
 	ldy #SPRITE_BUFFER_LEN-1
 
 @Loop:
-	lda (DATA_PTR),y
+	lda SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN,y
 	eor #$ff
-	sta (DATA_PTR),y
+	sta SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN,y
 	dey
 	bpl @Loop
 
 	jmp DrawBitMatrix
 
+.endproc
+
+; Create a new frame at the end and switch to it.
+.proc AppendFrame
+	ldy MaxFrame
+	cpy #MAX_FRAMES-1
+	beq @Stopped
+
+	; The new frame should be cleared
+	lda #$01
+	sta EditClearPreview
+
+	iny
+	sty MaxFrame
+	ldx CurFrame
+	jmp SwitchFrame
+
+@Stopped:
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
+	SetPointer MaxFramesReachedTxt, STRING_PTR
+	
+	ldy #0
+	jsr PrintStringZ
+	jmp Flash
+
+.endproc
+
+; Set the specified frame as the current editor frame
+;
+; PARAMS:
+; X - Old frame
+; Y - New frame
+;
+; RETURN: -
+.proc SwitchFrame
+	sty CurFrame
+
+	lda EditFlags
+	and #EDIT_DIRTY
+	beq @SkipCopy
+
+	; Copy the current editor frame to the sprite
+	ldy #SPRITE_PREVIEW_SRC
+	jsr CopySpriteFrame
+
+@SkipCopy:
+	; Now copy the new sprite into the preview
+	jmp UpdateFrameEditor
 .endproc
 
 ; Copy the sprite buffer from source to target
@@ -1463,6 +1535,11 @@ MAIN_APPLICATION = *
 ; Y - 0 = Normal copy
 ;     SPRITE_PREVIEW_SRC
 ;     SPRITE_PREVIEW_TGT
+;
+; If Y is not 0 the value in A or X is ignored
+; depending on Y. If Y is SPRITE_PREVIEW_SRC then
+; A is ignored, otherwise X. Only if Y is 0
+; will both values be needed.
 .proc CopySpriteFrame
 
 	; Remember the source
@@ -1510,7 +1587,7 @@ MAIN_APPLICATION = *
 ; Y - Number of columns 1 .. SCREEN_COLUMNS
 ; A - character to use
 ; CONSOLE_PTR - Pointer to top left corner.
-; LINE_OFFSET - Line offset
+; RectangleLineOffset - Line offset
 ;
 .proc FillRectangle
 
@@ -1526,7 +1603,7 @@ MAIN_APPLICATION = *
 	; Advance to next Line
 	clc
 	lda CONSOLE_PTR
-	adc LINE_OFFSET
+	adc RectangleLineOffset
 	sta CONSOLE_PTR
 	lda CONSOLE_PTR+1
 	adc #0
@@ -1576,7 +1653,7 @@ MAIN_APPLICATION = *
 	ldy #79
 	lda #' '
 
-:	sta SCREEN_VIC+SCREEN_COLUMNS*23,y
+:	sta SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES,y
 	dey
 	bpl :-
 
@@ -1640,16 +1717,13 @@ MAIN_APPLICATION = *
 	tax					; We only need 3 digits
 	ldy TMP_VAL_3
 	iny
-	jsr BCDToString
-
-	rts
+	jmp BCDToString
 .endproc
 
 .if 0
 ; Create a sprite shape which makes the border edges better visible.
 .proc CreateDebugSprite
-	;DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-	DEBUG_SPRITE_PTR = SPRITE_USER_START+(0*SPRITE_BUFFER_LEN)
+	DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
 
 	ldy #3*21
 	lda #255
@@ -1752,7 +1826,6 @@ MAIN_APPLICATION = *
 .proc SaveSprites
 
 	; Copy the current edit buffer to the sprite frame buffer
-	lda #0
 	ldx CurFrame
 	ldy #SPRITE_PREVIEW_SRC
 	jsr CopySpriteFrame
@@ -1763,7 +1836,7 @@ MAIN_APPLICATION = *
 	lbeq @Cancel
 
 	SetPointer OpenFileTxt, STRING_PTR
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	ldy #0
 	jsr ClearLine
 	ldy #SCREEN_COLUMNS
@@ -1830,7 +1903,7 @@ MAIN_APPLICATION = *
 	sta DATA_PTR+1
 
 	lda FileFrameStart
-	sta FILE_FRAME
+	sta FileFrameCur
 
 	; Write a single character to disk
 	SetPointer BSOUT, FARCALL_PTR
@@ -1838,7 +1911,7 @@ MAIN_APPLICATION = *
 
 	; Write a single sprite buffer
 @NextFrame:
-	ldx FILE_FRAME
+	ldx FileFrameCur
 	tax
 	ldx FileFrameEnd
 	ldy #14
@@ -1860,11 +1933,11 @@ MAIN_APPLICATION = *
 	cpy #SPRITE_BUFFER_LEN				; Size of a sprite block
 	bne	@WriteFrame
 
-	ldy FILE_FRAME
+	ldy FileFrameCur
 	iny
-	sty FILE_FRAME
+	sty FileFrameCur
 	cpy FileFrameEnd
-	bge @Done
+	bgt @Done
 
 	; Switch to next sprite buffer
 	clc
@@ -1877,7 +1950,7 @@ MAIN_APPLICATION = *
 	jmp @NextFrame
 
 @Done:
-	ldx FILE_FRAME
+	ldx FileFrameCur
 	tax
 	ldx FileFrameEnd
 	ldy #14
@@ -1903,7 +1976,7 @@ MAIN_APPLICATION = *
 .proc ShowStatusLine
 	jsr ClearStatusLine
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	ldy #0
 	jsr PrintStringZ
 
@@ -1916,7 +1989,7 @@ MAIN_APPLICATION = *
 
 .proc GetSpriteSaveInfo
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr ClearLine
@@ -1926,6 +1999,16 @@ MAIN_APPLICATION = *
 
 	SetPointer FrameTxt, STRING_PTR
 	jsr PrintStringZ
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR+1
+	sta STRING_PTR+1
+
+	lda CurFrame
+	ldx MaxFrame
+	ldy #11
+	jsr PrintFrameCounter
 
 	SetPointer DriveTxt, STRING_PTR
 	ldy #20
@@ -1937,7 +2020,7 @@ MAIN_APPLICATION = *
 	sta EnterNumberStrLen
 
 	; Get low frame
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+11), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+11), CONSOLE_PTR
 	lda #1
 	ldx #1
 	ldy MaxFrame
@@ -1949,7 +2032,7 @@ MAIN_APPLICATION = *
 	dec FileFrameStart	; Back to 0 based
 
 	; Get high frame
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+15), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+15), CONSOLE_PTR
 	ldx MaxFrame	; User deals with 1..N
 	inx
 	txa
@@ -1961,7 +2044,7 @@ MAIN_APPLICATION = *
 	dec FileFrameEnd	; Back to 0 based
 
 	; Get drive number 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+27), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+27), CONSOLE_PTR
 	lda #$02
 	sta EnterNumberStrLen
 	lda DiskDrive
@@ -1991,7 +2074,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc EnterFilename
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	SetPointer FilenameTxt, STRING_PTR
 
 	ldy #0
@@ -2001,7 +2084,7 @@ MAIN_APPLICATION = *
 	ldx FilenameLen
 	jsr PrintString
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23+FilenameTxtLen), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+FilenameTxtLen), CONSOLE_PTR
 	SetPointer Filename, STRING_PTR
 
 @InputLoop:
@@ -2034,7 +2117,7 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	pha
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*24), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
 	SetPointer EmptyFilenameTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
@@ -2141,7 +2224,7 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	sta EnterNumberConsolePtr+1
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*24), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
 	SetPointer EnterNumberMsg, STRING_PTR
 	ldy #0
 	ldx #EnterNumberMsgLen
@@ -2249,7 +2332,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc FileError
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*23), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 
 	bit $90
 	bpl @UnknownError
@@ -2267,7 +2350,7 @@ MAIN_APPLICATION = *
 	jsr PrintStringZ
 
 @Done:
-	jsr Delay
+	jsr Flash
 	jsr Delay
 
 @Close:
@@ -2328,14 +2411,16 @@ TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0
 TMP_VAL_2: .word 0
 TMP_VAL_3: .word 0
+RectangleLineOffset: .byte 0
 
 ; Number of lines/bytes to be printed as bits
 EditFlags:		.byte 0
 EditColumnBytes: .byte 0
-EditColumns: .byte 0
-EditLines: .byte 0
-EditCursorX: .byte 0
-EditCursorY: .byte 0
+EditColumns:	.byte 0
+EditLines:		.byte 0
+EditCursorX:	.byte 0
+EditCursorY:	.byte 0
+EditClearPreview: .byte 0	; Clear the preview when the frame is updated if set to 1
 ; Size of a framebuffer. 64 for a sprite and 8 for a character
 EditFrameSize: .byte 0
 
@@ -2362,8 +2447,9 @@ Filename: .byte "SPRITEDATA"
 FilenameDefaultLen = *-Filename
 		.res 21-FilenameDefaultLen,0	; Excess placeholder for the filename
 
-FileFrameStart: .byte 1		; first frame to save
+FileFrameStart: .byte 0		; first frame to save
 FileFrameEnd: .byte 0		; last frame to save
+FileFrameCur: .byte 0		; current frame to save
 
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberMsgLen = *-EnterNumberMsg
@@ -2405,11 +2491,17 @@ LoadingTxt:		.byte "READING ",0
 DoneTxt:		.byte "DONE                                    ",0
 EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
+MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
 ErrorFileIOTxt: .byte "FILE I/O ERROR",0
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
+
+; This map contains the modifier, keycode and the function to trigger
+SpriteEditorKeyMap:
+	.byte 0, $20	; SPACE
+	.word ToggleSpritePixel
 
 .if 0
 ; TODO: Just for early debugging. Can be removed
