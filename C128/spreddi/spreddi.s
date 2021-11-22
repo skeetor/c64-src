@@ -609,6 +609,14 @@ MAIN_APPLICATION = *
 	sta EditorWaitRelease
 .endproc
 
+; We loop through the keymap and check if there is an entry
+; which matches the Modifierand KeyCode. If such an entry is
+; found, the associated keyhandler is executed.
+;
+; The SHIFT key is handled in a special way. If KEY_SHIFT
+; is set, we ignore KEY_SHIFT_LEFT or KEY_SHIFT_RIGHT
+; as this means that any SHIFT key is allowed to be pressed.
+; If KEY_SHIFT is not set, then it must also match exactly. 
 .proc CheckKeyMap
 
 	lda KeyMapBasePtr
@@ -616,10 +624,34 @@ MAIN_APPLICATION = *
 	lda KeyMapBasePtr+1
 	sta KEYMAP_PTR+1
 
+	; Remove the KEY_SHIFT flag so we can properly compare
+	; against the SHIFT_LEFT/RIGHT flags.
+	lda KeyModifier
+	and #$ff ^ KEY_SHIFT
+	sta KeyMapModifier
+
 @CheckKeyLoop:
 	ldy #0
 	lda (KEYMAP_PTR),y
-	cmp KeyModifier
+
+	tsx
+	pha
+	and #KEY_SHIFT
+	beq @CheckModifier
+
+	; If the modifier has the SHIFT key set
+	; We can ignore the LEFT or RIGHT flags.
+	lda $0100,x
+	and #$ff ^ KEY_SHIFT
+	sta $0100,x				; Save the modifiers without the SHIFT flags
+	lda KeyMapModifier		; Original modifiers ...
+	and #(KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT) ; .. and extract the shift states
+	ora $0100,x				; Add the shift keys from the actual key
+	sta $0100,x				; push the required shift states.
+
+@CheckModifier:
+	pla
+	cmp KeyMapModifier
 	bne @NextKey
 
 @CheckKey:
@@ -1352,10 +1384,16 @@ MAIN_APPLICATION = *
 	beq @DoCopy
 
 	; Clear flag
+	jsr ClearPreviewSprite
+	jsr @UpdateFrame
 	lda #$00
 	sta EditClearPreview
-	jsr ClearPreviewSprite
-	jmp @UpdateFrame
+
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+	rts
 
 @DoCopy:
 	lda CurFrame
@@ -1363,7 +1401,11 @@ MAIN_APPLICATION = *
 	jsr CopySpriteFrame
 
 	jsr DrawBitMatrix
-	jsr MoveCursorHome
+	;jsr MoveCursorHome
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
 
 @UpdateFrame:
 
@@ -1408,8 +1450,17 @@ MAIN_APPLICATION = *
 
 .endproc
 
+; If the user pressed the key, we move the cursor
+; to the top left corner, otherwise it stays where it is.
+.proc ClearPreviewSpriteKey
+	jsr ClearPreviewSprite
+	SetPointer SPRITE_PREVIEW_BUFFER, PIXEL_LINE
+	jmp MoveCursorHome
+.endproc
+
 ; Clear the preview sprite buffer
 .proc ClearPreviewSprite
+	jsr SetDirty
 
 	lda #$00
 	ldy #SPRITE_BUFFER_LEN-1
@@ -1419,14 +1470,14 @@ MAIN_APPLICATION = *
 	dey
 	bpl @Loop
 
-	jsr DrawBitMatrix
-	jmp MoveCursorHome
+	jmp DrawBitMatrix
 
 .endproc
 
 ; Invert the preview sprite buffer
 .proc InvertSprite
 
+	jsr SetDirty
 	ldy #SPRITE_BUFFER_LEN-1
 
 @Loop:
@@ -1441,11 +1492,34 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc NextFrame
-	rts
+	lda #$80
+	sta EditorWaitRelease
+
+	ldy CurFrame
+	cpy MaxFrame
+	bne @Update
+	ldy #$ff		; Wrap around to first frame
+
+@Update:
+	iny
+	ldx CurFrame
+	jmp SwitchFrame
 .endproc
 
 .proc PreviousFrame
-	rts
+	lda #$80
+	sta EditorWaitRelease
+
+	ldy CurFrame
+	bne @Update
+
+	ldy MaxFrame
+	iny
+
+@Update:
+	dey
+	ldx CurFrame
+	jmp SwitchFrame
 .endproc
 
 ; Create a new frame at the end and switch to it.
@@ -1761,7 +1835,7 @@ MAIN_APPLICATION = *
 	bne @FindBitMask
 
 @ToggleBit:
-	; Save our bitmask temporarily
+	; Save the bitmask
 	sta TMP_VAL_0
 	lda (PIXEL_LINE),y
 	eor TMP_VAL_0
@@ -2470,23 +2544,38 @@ CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 ; This map contains the modifier, keycode and the function to trigger
 KeyMapBasePtr: .word 0
 KeyMapFunction: .word 0
+KeyMapModifier: .byte 0	; Copy of KeyModifier to handle SHIFT flags
 
 .macro  DefineKey	Modifier, Code, Function
 	.byte Modifier, Code
 	.word Function
 .endmacro
 
+; NOTE: When defining a key assignment using SHIFT keys we can
+; only use either KEY_SHIFT or KEY_SHIFT_LEFT/KEY_SHIFT_RIGHT.
+; If KEY_SHIFT is set then LEFT/RIGHT is ignored for the comparison.
+;
+; If LEFT/RIGHT is desired it must be defined without the KEY_SHIFT
+; flag to work. LEFT/RIGHT may be used together, but this means the
+; user would really have to press both shift keys to trigger.
+;
+; Example:
+;	Space key + any shift key will trigger
+;	DefineKey KEY_SHIFT, $20, Function
+;
+;	Space key + RIGHT SHIFT only will trigger
+;	DefineKey KEY_SHIFT_RIGHT, $20, Function
 SpriteEditorKeyMap:
 	DefineKey 0, $20, ToggleSpritePixel				; SPACE
 	DefineKey 0, $1d, MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, MoveCursorDown				; CRSR-Down
 	DefineKey 0, $2c, PreviousFrame					; ,
 	DefineKey 0, $2e, NextFrame						; .
-	DefineKey 0, $14, ClearPreviewSprite			; DEL
+	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
 	DefineKey 0, $13, MoveCursorHome				; HOME
 	DefineKey 0, $49, InvertSprite					; I
 	DefineKey 0, $4e, AppendFrame					; N
-	;DefineKey 0, $4c, LoadSprites					; L
+	DefineKey 0, $4c, LoadSprites					; L
 	DefineKey 0, $53, SaveSprites					; S
 	DefineKey 0, $4d, ToggleMulticolor				; M
 	DefineKey 0, $58, TogglePreviewX				; X
@@ -2496,8 +2585,8 @@ SpriteEditorKeyMap:
 	DefineKey 0, '3', IncSpriteColor3				; 3
 
 	; SHIFT keys
-	;DefineKey KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $9d, MoveCursorLeft	; CRSR-Left
-	;DefineKey KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $91, MoveCursorUp		; CRSR-Up
+	DefineKey KEY_SHIFT, $9d, MoveCursorLeft		; CRSR-Left
+	DefineKey KEY_SHIFT, $91, MoveCursorUp			; CRSR-Up
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad
@@ -2505,8 +2594,8 @@ SpriteEditorKeyMap:
 	DefineKey KEY_EXT, $11, MoveCursorDown			; CRSR-Down/Keypad
 	DefineKey KEY_EXT, $91, MoveCursorUp			; CRSR-Up/Keypad
 
-	DefineKey KEY_EXT|KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $1d, PreviousFrame			; CRSR-Right/Keypad
-	DefineKey KEY_EXT|KEY_SHIFT|KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT, $9d, NextFrame				; CRSR-Left/Keypad
+	DefineKey KEY_EXT|KEY_SHIFT, $1d, NextFrame		; CRSR-Right/Keypad
+	DefineKey KEY_EXT|KEY_SHIFT, $9d, PreviousFrame	; CRSR-Left/Keypad
 
 	; End of map
 	DefineKey 0,0,0
