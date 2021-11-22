@@ -1525,6 +1525,18 @@ MAIN_APPLICATION = *
 ; Append a new frame at the end and copy the current
 ; frame to it.
 .proc AppendFrameCopy
+	ldx MaxFrame
+	cpx #MAX_FRAMES-1
+	beq @Done		; We still call AppendFrame to
+					; trigger the error handling as
+					; it will also fail
+
+	; Copy the current frame to the last frame+1
+	inx
+	ldy #SPRITE_PREVIEW_SRC		; Copy frame to frame
+	jsr CopySpriteFrame
+	
+@Done:
 	jmp AppendFrame
 .endproc
 
@@ -2609,7 +2621,7 @@ SpriteEditorKeyMap:
 	; SHIFT keys
 	DefineKey KEY_SHIFT, $9d, MoveCursorLeft		; CRSR-Left
 	DefineKey KEY_SHIFT, $91, MoveCursorUp			; CRSR-Up
-	;DefineKey KEY_SHIFT, $ce, AppendFrameCopy		; SHIFT-N
+	DefineKey KEY_SHIFT, $ce, AppendFrameCopy		; SHIFT-N
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad

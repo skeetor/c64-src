@@ -4,12 +4,13 @@
 
 #### - Keys (* = not implemented)
 *C - Copy frame A to B<br>
+*D - Delete Frame N..M<br>
 I - Invert edit matrix<br>
 *G - Goto frame<br>
 *H - Help screen<br>
 *L - Load file<br>
 N - New empty frame at end<br>
-*SHIFT N - Append current frame at end (Copy)<br>
+SHIFT N - Append current frame at end (Copy)<br>
 *COMMODORE N - New empty frame at current position (Insert)<br>
 *CONTROL N - Insert copy of current frame at current position (Insert copy)<br>
 *O - Overlay sprite to preview (select frame)<br>
@@ -22,12 +23,11 @@ SPC - Toggle bit<br>
 , - Previous frame<br>
 . - Next frame<br>
 CRSR Left/Right/Up/Down - Move cursor in edit grid<br>
-*SHIFT EXT CRSR Left/Right - next/previous frame<br>
+SHIFT EXT CRSR Left/Right - next/previous frame<br>
 		Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left
 		is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.<br>
 HOME - Cursor to top first pixel
 DEL - Clear grid<br>
-*COMMODORE DEL - Delete Frame<br>
 1 - Cycle Spritecolor
 2 - Cycle Spritecolor MC0
 3 - Cycle Spritecolor MC1
