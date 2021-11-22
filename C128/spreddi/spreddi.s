@@ -1522,15 +1522,24 @@ MAIN_APPLICATION = *
 	jmp SwitchFrame
 .endproc
 
+; Append a new frame at the end and copy the current
+; frame to it.
+.proc AppendFrameCopy
+	jmp AppendFrame
+.endproc
+
 ; Create a new frame at the end and switch to it.
+.proc AppendFrameKey
+	; The new frame should be cleared
+	lda #$01
+	sta EditClearPreview
+.endproc
+
+; Append a new frame at the end
 .proc AppendFrame
 	ldy MaxFrame
 	cpy #MAX_FRAMES-1
 	beq @Stopped
-
-	; The new frame should be cleared
-	lda #$01
-	sta EditClearPreview
 
 	iny
 	sty MaxFrame
@@ -1543,6 +1552,10 @@ MAIN_APPLICATION = *
 	
 	ldy #0
 	jsr PrintStringZ
+
+	; Reset the clear flag.
+	lda #$00
+	sta EditClearPreview
 	jmp Flash
 
 .endproc
@@ -1566,7 +1579,15 @@ MAIN_APPLICATION = *
 	jsr CopySpriteFrame
 
 @SkipCopy:
-	; Now copy the new sprite into the preview
+	jmp UpdateFrameEditor
+.endproc
+
+.proc UndoFrame	
+	lda CurFrame
+	ldy #SPRITE_PREVIEW_TGT
+	jsr CopySpriteFrame
+
+	jsr ClearDirty
 	jmp UpdateFrameEditor
 .endproc
 
@@ -1576,8 +1597,8 @@ MAIN_APPLICATION = *
 ; A - Source frame
 ; X - Target frame
 ; Y - 0 = Normal copy
-;     SPRITE_PREVIEW_SRC
-;     SPRITE_PREVIEW_TGT
+;     SPRITE_PREVIEW_SRC - Copy sprite from preview to target
+;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
 ;
 ; If Y is not 0 the value in A or X is ignored
 ; depending on Y. If Y is SPRITE_PREVIEW_SRC then
@@ -2574,7 +2595,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
 	DefineKey 0, $13, MoveCursorHome				; HOME
 	DefineKey 0, $49, InvertSprite					; I
-	DefineKey 0, $4e, AppendFrame					; N
+	DefineKey 0, $4e, AppendFrameKey				; N
 	DefineKey 0, $4c, LoadSprites					; L
 	DefineKey 0, $53, SaveSprites					; S
 	DefineKey 0, $4d, ToggleMulticolor				; M
@@ -2583,10 +2604,12 @@ SpriteEditorKeyMap:
 	DefineKey 0, '1', IncSpriteColor1				; 1
 	DefineKey 0, '2', IncSpriteColor2				; 2
 	DefineKey 0, '3', IncSpriteColor3				; 3
+	DefineKey 0, $55, UndoFrame						; U
 
 	; SHIFT keys
 	DefineKey KEY_SHIFT, $9d, MoveCursorLeft		; CRSR-Left
 	DefineKey KEY_SHIFT, $91, MoveCursorUp			; CRSR-Up
+	;DefineKey KEY_SHIFT, $ce, AppendFrameCopy		; SHIFT-N
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad

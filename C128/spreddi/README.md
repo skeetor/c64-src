@@ -15,7 +15,7 @@ N - New empty frame at end<br>
 *O - Overlay sprite to preview (select frame)<br>
 M - Multicolor<br>
 S - Save File<br>
-*U - Undo (restore the current frame)
+U - Undo changes by restore the current frame<br>
 X - Toggle Width<br>
 Y - Toggle Heigth<br>
 SPC - Toggle bit<br>
