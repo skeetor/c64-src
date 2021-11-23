@@ -39,7 +39,7 @@ COLOR_TXT_COLUMN = 27
 SCREEN_VIC			= $0400
 SCREEN_COLUMNS		= 40
 SCREEN_LINES		= 23
-STATUS_LINE			= SCREEN_LINES-1
+STATUS_LINE			= SCREEN_LINES+1		; Last line of screen
 SPRITE_PTR			= $7f8
 SPRITE_PREVIEW		= 0	; Number of the previewsprite
 SPRITE_CURSOR		= 1	; Number of the cursor sprite
@@ -491,9 +491,11 @@ basicstub:
 
 .proc memcpy255
 	dey
+
 @Loop:
 	lda (MEMCPY_SRC),y
 	sta (MEMCPY_TGT),y
+
 	dey
 	cpy #$ff
 	bne @Loop
@@ -1522,6 +1524,45 @@ MAIN_APPLICATION = *
 	jmp SwitchFrame
 .endproc
 
+.proc CopyFromFrame
+	lda MaxFrame
+	beq @Cancel
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+
+	ldx CurFrame
+	beq :+			; If we are not on the first frame
+	dex				; we set the previous frame to default
+					; as it doesn't make sense to provide the
+					; current frame as default value when it
+					; can not be used as we don't copy to
+					; itself.
+
+:	txa
+	ldy #$00
+	jsr EnterFrameNumber
+	cpy #$00
+	beq @Cancel
+
+	; Copy to itself doesn't make sense
+	cmp CurFrame
+	beq @Cancel
+
+	; A - contains the source frame from the input as return value
+	ldx CurFrame
+	ldy #$00
+	jsr CopySpriteFrame
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #0
+	jsr ClearLine
+
+	jmp UpdateFrameEditor
+
+@Cancel:
+	rts
+.endproc
+
 ; Append a new frame at the end and copy the current
 ; frame to it.
 .proc AppendFrameCopy
@@ -1710,11 +1751,11 @@ MAIN_APPLICATION = *
 ;
 ; PARAM:
 ; Y - Offset in the line
-; CONSOL_PTR - points to the line
+; CONSOLE_PTR - points to the line
 .proc ClearLine
 
 	lda #' '
-	ldx #SCREEN_COLUMNS
+	ldx #SCREEN_COLUMNS-1
 
 :
 	sta (CONSOLE_PTR),y
@@ -1725,7 +1766,7 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc ClearStatusLine
+.proc ClearStatusLines
 	ldy #79
 	lda #' '
 
@@ -1788,6 +1829,8 @@ MAIN_APPLICATION = *
 
 	lda TMP_VAL_2		; Max frames
 	sta BINVal			; First print the CurFrame value
+	lda #$00
+	sta BINVal+1
 	jsr BinToBCD16
 	lda #$01			; Skip the first digit otherwise it would be 4
 	tax					; We only need 3 digits
@@ -1987,8 +2030,7 @@ MAIN_APPLICATION = *
 
 	; Write a single sprite buffer
 @NextFrame:
-	ldx FileFrameCur
-	tax
+	lda FileFrameCur
 	ldx FileFrameEnd
 	ldy #14
 	jsr PrintFrameCounter
@@ -2026,12 +2068,6 @@ MAIN_APPLICATION = *
 	jmp @NextFrame
 
 @Done:
-	ldx FileFrameCur
-	tax
-	ldx FileFrameEnd
-	ldy #14
-	jsr PrintFrameCounter
-
 	lda #2
 	jsr CloseFile
 
@@ -2039,7 +2075,7 @@ MAIN_APPLICATION = *
 	ldy #$00
 	jsr PrintStringZ
 	jsr Delay
-	jsr ClearStatusLine
+	jsr ClearStatusLines
 
 	rts
 
@@ -2050,7 +2086,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc ShowStatusLine
-	jsr ClearStatusLine
+	jsr ClearStatusLines
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	ldy #0
@@ -2059,20 +2095,73 @@ MAIN_APPLICATION = *
 	; Show the status line for a small period of time
 	jsr Delay
 
-	jsr ClearStatusLine
+	jsr ClearStatusLines
 	rts
 .endproc
 
 .proc GetSpriteSaveInfo
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
-	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr ClearLine
 
+	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
+	tya
+	pha
 
+	SetPointer DriveTxt, STRING_PTR
+	ldy #20
+	jsr PrintStringZ
+
+	pla
+	tay
+	jsr EnterFrameNumbers
+	cmp #$00
+	beq @Cancel
+
+	; Get drive number 
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+27), CONSOLE_PTR
+	lda #$02
+	sta EnterNumberStrLen
+	lda DiskDrive
+	ldx #8
+	ldy #11
+	jsr EnterNumberReg
+	cpy #1
+	bne @Cancel
+	sta DiskDrive
+
+	ldy #0
+	jsr ClearLine
+
+	; And finally get the filename
+	jsr EnterFilename
+
+	ldy #0
+	jsr ClearLine
+
+	; Everything went ok
+	lda #$01
+	rts
+
+@Cancel:
+	lda #$00
+	rts
+.endproc
+
+; Enter low and high frame numbers.
+;
+; PARAMS:
+; CONSOLE_PTR - Screen location for input
+;
+; RETURN:
+; A - 0 - Cancel
+; Y - Offset of frame string.
+; FileFrameStart
+; FileFrameEnd
+.proc EnterFrameNumbers
 	SetPointer FrameTxt, STRING_PTR
 	jsr PrintStringZ
 
@@ -2086,10 +2175,6 @@ MAIN_APPLICATION = *
 	ldy #11
 	jsr PrintFrameCounter
 
-	SetPointer DriveTxt, STRING_PTR
-	ldy #20
-	jsr PrintStringZ
-
 	SetPointer EnterNumberStr, STRING_PTR
 
 	lda #3
@@ -2098,10 +2183,10 @@ MAIN_APPLICATION = *
 	; Get low frame
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+11), CONSOLE_PTR
 	lda #1
-	ldx #1
+	tax
 	ldy MaxFrame
 	iny					; User deals with 1..N
-	jsr EnterNumber
+	jsr EnterNumberReg
 	cpy #1
 	bne @Cancel
 	sta FileFrameStart
@@ -2113,32 +2198,11 @@ MAIN_APPLICATION = *
 	inx
 	txa
 	tay
-	jsr EnterNumber
+	jsr EnterNumberReg
 	cpy #1
 	bne @Cancel
 	sta FileFrameEnd
 	dec FileFrameEnd	; Back to 0 based
-
-	; Get drive number 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+27), CONSOLE_PTR
-	lda #$02
-	sta EnterNumberStrLen
-	lda DiskDrive
-	ldx #8
-	ldy #11
-	jsr EnterNumber
-	cpy #1
-	bne @Cancel
-	sta DiskDrive
-
-	ldy #0
-	jsr ClearLine
-
-	; And finally get the filename
-	jsr EnterFilename
-
-	ldy #0
-	jsr ClearLine
 
 	; Everything went ok
 	lda #$01
@@ -2217,6 +2281,60 @@ MAIN_APPLICATION = *
 	jmp @InputLoop
 .endproc
 
+; Input a single frame number. It prints the frame text to 
+; the specified location in CONSOLE_PTR.
+;
+; PARAMS:
+; A - Framenumber to use as default
+; Y - Offset of frame string.
+; CONSOLE_PTR - position of the FRAME text.
+; EnterNumberStrLen - Length of input string (1...3)
+;
+; RETURN:
+; A - Lobyte of value
+; X - Hibyte of value
+; Y - 1 (OK) : 0 (CANCEL)
+; If Y != 1 the value in A is undefined and should not be used.
+.proc EnterFrameNumber
+	pha
+	SetPointer FrameTxt, STRING_PTR
+	ldx #FrameTxtOnlyLen
+	jsr PrintString
+
+	lda #3
+	sta EnterNumberStrLen
+
+	; Set intput cursor after the text.
+	clc
+	tya
+	adc CONSOLE_PTR
+	sta CONSOLE_PTR
+	lda CONSOLE_PTR+1
+	adc #$00
+	sta CONSOLE_PTR+1
+
+	; Framenumber is internally stored as 0..N-1
+	; but the user should be able to enter 1...N
+	; so we have to adjust it.
+	pla
+	tax
+	inx
+	txa
+	ldx #$01
+	ldy MaxFrame
+	iny
+	jsr EnterNumberReg
+	cpy #0
+	beq @Done
+
+	; Back to 0..N-1
+	sec
+	sbc #1
+
+@Done:
+	rts
+.endproc
+
 ; Input a number value which can be 0...255
 ;
 ; PARAMS:
@@ -2231,16 +2349,32 @@ MAIN_APPLICATION = *
 ; X - Hibyte of value
 ; Y - 1 (OK) : 0 (CANCEL)
 ; If Y != 1 the value in A is undefined and should not be used.
-.proc EnterNumber
+.proc EnterNumberReg
 	sta EnterNumberCurVal
 	stx EnterNumberMinVal
 	sty EnterNumberMaxVal
+.endproc
 
+; Input a number value which can be 0...255
+;
+; PARAMS:
+; EnterNumberCurVal
+; EnterNumberMinVal
+; EnterNumberMaxVal
+; CONSOLE_PTR - position of the input string
+; EnterNumberStrLen - Length of input string (1...3)
+;
+; RETURN:
+; A - Lobyte of value
+; X - Hibyte of value
+; Y - 1 (OK) : 0 (CANCEL)
+; If Y != 1 the value in A is undefined and should not be used.
+.proc InputNumber
 	SetPointer NumberInputFilter, InputFilterPtr
 
 @InputLoop:
 	SetPointer EnterNumberStr, STRING_PTR
-	ldy #4
+	ldy #4					; max 3 digits +1 end byte
 	lda #' '
 
 @ClearString:
@@ -2550,6 +2684,7 @@ LeftBottomRight: .res $03, $00
 
 FramePtr: .word 0	; Address for current frame pointer
 FrameTxt: .byte "FRAME:  1/  1",0
+FrameTxtOnlyLen = 6
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
@@ -2602,10 +2737,11 @@ SpriteEditorKeyMap:
 	DefineKey 0, $20, ToggleSpritePixel				; SPACE
 	DefineKey 0, $1d, MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, MoveCursorDown				; CRSR-Down
-	DefineKey 0, $2c, PreviousFrame					; ,
 	DefineKey 0, $2e, NextFrame						; .
+	DefineKey 0, $2c, PreviousFrame					; ,
 	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
 	DefineKey 0, $13, MoveCursorHome				; HOME
+	DefineKey 0, $43, CopyFromFrame					; C
 	DefineKey 0, $49, InvertSprite					; I
 	DefineKey 0, $4e, AppendFrameKey				; N
 	DefineKey 0, $4c, LoadSprites					; L
@@ -2622,6 +2758,8 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $9d, MoveCursorLeft		; CRSR-Left
 	DefineKey KEY_SHIFT, $91, MoveCursorUp			; CRSR-Up
 	DefineKey KEY_SHIFT, $ce, AppendFrameCopy		; SHIFT-N
+	DefineKey KEY_SHIFT, $3e, NextFrame				; SHIFT-.
+	DefineKey KEY_SHIFT, $3c, PreviousFrame			; SHIFT-,
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad

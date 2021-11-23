@@ -3,7 +3,7 @@
 #### Sprites
 
 #### - Keys (* = not implemented)
-*C - Copy frame A to B<br>
+C - Copy from frame N to current<br>
 *D - Delete Frame N..M<br>
 I - Invert edit matrix<br>
 *G - Goto frame<br>
@@ -13,7 +13,7 @@ N - New empty frame at end<br>
 SHIFT N - Append current frame at end (Copy)<br>
 *COMMODORE N - New empty frame at current position (Insert)<br>
 *CONTROL N - Insert copy of current frame at current position (Insert copy)<br>
-*O - Overlay sprite to preview (select frame)<br>
+*O - Overlay current sprite N in sprite preview (select frame). Not sure if this might usefull or confusing<br>
 M - Multicolor<br>
 S - Save File<br>
 U - Undo changes by restore the current frame<br>
