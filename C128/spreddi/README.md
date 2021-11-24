@@ -6,7 +6,7 @@
 C - Copy from frame N to current<br>
 *D - Delete Frame N..M<br>
 I - Invert edit matrix<br>
-*G - Goto frame<br>
+G - Goto frame<br>
 *H - Help screen<br>
 *L - Load file<br>
 N - New empty frame at end<br>

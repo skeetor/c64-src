@@ -1524,6 +1524,42 @@ MAIN_APPLICATION = *
 	jmp SwitchFrame
 .endproc
 
+.proc GotoFrame
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+
+	; We don't want a default value here, as we can not know
+	; where the user wants to jump to, and it is annoying to
+	; always have to delete the default first, before the target
+	; can be entered.
+	lda #$01
+	sta EnterNumberEmpty
+
+	lda CurFrame
+	ldy #$00
+	jsr EnterFrameNumber
+	cpy #$00
+	beq @Cancel
+
+	tay
+
+	lda #$00
+	sta EnterNumberEmpty
+
+	; Already there?
+	cpy CurFrame
+	beq @Cancel
+
+	ldx CurFrame
+	jsr SwitchFrame
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #0
+	jmp ClearLine
+
+@Cancel:
+	rts
+.endproc
+
 .proc CopyFromFrame
 	lda MaxFrame
 	beq @Cancel
@@ -1753,10 +1789,12 @@ MAIN_APPLICATION = *
 ; Y - Offset in the line
 ; CONSOLE_PTR - points to the line
 .proc ClearLine
-
 	lda #' '
-	ldx #SCREEN_COLUMNS-1
+.endproc
 
+.proc FillLine
+
+	ldx #SCREEN_COLUMNS-1
 :
 	sta (CONSOLE_PTR),y
 	iny
@@ -1767,8 +1805,8 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc ClearStatusLines
-	ldy #79
 	lda #' '
+	ldy #79
 
 :	sta SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES,y
 	dey
@@ -2358,6 +2396,7 @@ MAIN_APPLICATION = *
 ; Input a number value which can be 0...255
 ;
 ; PARAMS:
+; EnterNumberEmpty	0 - Print curValue as default. 1 - Leave string empty
 ; EnterNumberCurVal
 ; EnterNumberMinVal
 ; EnterNumberMaxVal
@@ -2382,6 +2421,12 @@ MAIN_APPLICATION = *
 	dey
 	bpl @ClearString
 
+	lda EnterNumberEmpty
+	beq @PrintDefault
+	ldx #$00
+	jmp @SkipPrint
+
+@PrintDefault:
 	lda EnterNumberCurVal
 	sta BINVal
 	lda #$00
@@ -2395,6 +2440,7 @@ MAIN_APPLICATION = *
 	ldy #0
 	jsr BCDToString
 
+@SkipPrint:
 	ldy EnterNumberStrLen
 	jsr Input
 	cmp #$00			; User pressed cancel button
@@ -2666,6 +2712,7 @@ EnterNumberMsgLen = *-EnterNumberMsg
 
 EnterNumberStr: .res 7,0
 EnterNumberStrLen: .byte 0	; Length of the input string
+EnterNumberEmpty: .byte 0	; 1 - InputNumber will not print the current value
 EnterNumberCurVal: .byte 0
 EnterNumberMinVal: .byte 0
 EnterNumberMaxVal: .byte 0
@@ -2742,6 +2789,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
 	DefineKey 0, $13, MoveCursorHome				; HOME
 	DefineKey 0, $43, CopyFromFrame					; C
+	DefineKey 0, $47, GotoFrame						; G
 	DefineKey 0, $49, InvertSprite					; I
 	DefineKey 0, $4e, AppendFrameKey				; N
 	DefineKey 0, $4c, LoadSprites					; L
