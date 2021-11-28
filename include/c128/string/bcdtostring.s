@@ -8,7 +8,7 @@
 ;		number of digits is desired, otherwise it will always be
 ;		a multiple of 2 digits.
 ; STRING_PTR - Pointer to the string
-; ShowLeadingZeroes - Set to 0 if they should be showed, $ff if
+; LeadingZeroes - Set to 0 if they should be showed, $ff if
 ;       spaces should be used.
 ; LeftAligned - If set to $ff the digits start at the left
 ;               side, otherwise set to 0

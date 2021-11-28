@@ -85,8 +85,8 @@ CHAR_SPLIT_TOP			= $72
 EDITOR_RAM_CFG			= %00001110	; Bank 0 + $D000 + $C000-$FFFF
 EDITOR_COMMON_RAM_CFG	= %00000000 ; No common area 
 
-EDITOR_NO_REPEAT_KEY	= $00		; Editor wont repeat this key default
-EDITOR_REPEAT_KEY		= $80		; Editor can repeat this key (i.e. cursor keys)
+NO_REPEAT_KEY	= $00		; Editor wont repeat this key default
+REPEAT_KEY		= $80		; Editor can repeat this key (i.e. cursor keys)
 
 .export __LOADADDR__ = *
 .export STARTADDRESS = *
@@ -575,15 +575,6 @@ MAIN_APPLICATION = *
 
 .proc EditorKeyboardHandler
 	jsr ReadKeyRepeat
-
-	; By default we assume that the
-	; keyboard should be released before we
-	; read the next key. Some functions, like
-	; CURSOR processing, disables this, as we
-	; want them to repeat. They have to reset
-	; this on their own.
-	lda #EDITOR_NO_REPEAT_KEY
-	sta EditorWaitRelease
 .endproc
 
 ; We loop through the keymap and check if there is an entry
@@ -641,6 +632,9 @@ MAIN_APPLICATION = *
 	; the handler.
 	ldy #$02
 	lda (KEYMAP_PTR),y
+	sta EditorWaitRelease
+	iny
+	lda (KEYMAP_PTR),y
 	sta KeyMapFunction
 	iny
 	lda (KEYMAP_PTR),y
@@ -650,14 +644,14 @@ MAIN_APPLICATION = *
 @NextKey:
 	clc
 	lda KEYMAP_PTR
-	adc #$04
+	adc #KEYMAP_SIZE
 	sta KEYMAP_PTR
 	lda KEYMAP_PTR+1
 	adc #$00
 	sta KEYMAP_PTR+1
 
 	; If the functionpointer is a nullptr we have reached the end of the map.
-	ldy #$02
+	ldy #$03
 	lda (KEYMAP_PTR),y
 	bne @CheckKeyLoop
 	iny
@@ -894,10 +888,6 @@ MAIN_APPLICATION = *
 
 	sty EditCursorX
 
-	; Enable repeat mode
-	lda #EDITOR_REPEAT_KEY
-	sta EditorWaitRelease
-
 	rts
 .endproc
 
@@ -933,10 +923,6 @@ MAIN_APPLICATION = *
 	lda (CURSOR_LINE),y
 	ora #$80
 	sta (CURSOR_LINE),y
-
-	; Enable repeat mode
-	lda #EDITOR_REPEAT_KEY
-	sta EditorWaitRelease
 
 @Done:
 	rts
@@ -975,10 +961,6 @@ MAIN_APPLICATION = *
 	lda (CURSOR_LINE),y
 	ora #$80
 	sta (CURSOR_LINE),y
-
-	; Enable repeat mode
-	lda #EDITOR_REPEAT_KEY
-	sta EditorWaitRelease
 
 @Done:
 	rts
@@ -1469,9 +1451,6 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc NextFrame
-	lda #EDITOR_REPEAT_KEY
-	sta EditorWaitRelease
-
 	ldy CurFrame
 	cpy MaxFrame
 	bne @Update
@@ -1484,8 +1463,6 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc PreviousFrame
-	lda #EDITOR_REPEAT_KEY
-	sta EditorWaitRelease
 
 	ldy CurFrame
 	bne @Update
@@ -1673,7 +1650,9 @@ MAIN_APPLICATION = *
 	; Reset the clear flag.
 	lda #$00
 	sta EditClearPreview
-	jmp Flash
+	jsr Flash
+	ldy #0
+	jmp ClearLine
 
 .endproc
 
@@ -1698,26 +1677,6 @@ MAIN_APPLICATION = *
 
 	jsr ClearDirty
 	jmp UpdateFrameEditor
-.endproc
-
-; Check if the current frame has changes. If yes
-; it will be copied to it's target.
-;
-; PARAMS:
-; X - Target frame
-.proc SaveDirty
-	lda EditFlags
-	and #EDIT_DIRTY
-	beq @SkipCopy
-
-	jsr ClearDirty
-
-	; Copy the current editor frame to the sprite
-	ldy #SPRITE_PREVIEW_SRC
-	jmp CopySpriteFrame
-
-@SkipCopy:
-	rts
 .endproc
 
 ; Copy the sprite buffer from source to target
@@ -1925,6 +1884,38 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Print a single byte value as decimal
+;
+; PARAMS:
+; A - Skip number of digits
+; X - Value
+; Y - Offset in String
+; STRING_PTR
+;
+; OPTIONAL:
+; LeadingZeroes
+; LeftAligned
+;
+; RETURN:
+; Y - Position after last char printed
+.proc PrintByteDec
+
+	stx BINVal
+	tax
+	tya
+	pha					; Save line offset
+
+	lda #$00
+	sta BINVal+1
+	jsr BinToBCD16
+
+	pla
+	tay					; Restore line offset
+	inx					; Skip the first digit otherwise it would be 4
+	txa					; We only need 3 digits
+	jmp BCDToString
+.endproc
+
 ; Print the frame counters N/M
 ; STRING_PTR - point to start of the first digit.
 ; A - First frame - 0 ... MAX_FRAMES-1
@@ -1932,83 +1923,30 @@ MAIN_APPLICATION = *
 ; Y - offset in line
 ;
 ; Locals:
-; TMP_VAL_0
-; TMP_VAL_1
+; TMP_VAL_2
 .proc PrintFrameCounter
+
+	LAST_FRAME_VAL = TMP_VAL_2
 
 	; For display to the user we want to have the counter
 	; from 1...MAX_FRAMES
 	inx
-	stx TMP_VAL_2		; Save max frames
-	sty TMP_VAL_3		; and y position in string
+	stx LAST_FRAME_VAL
 
 	tax
 	inx
-	stx BINVal			; First print the CurFrame value
-	lda #$00
-	sta BINVal+1
-	jsr BinToBCD16
 
-	ldx #$00			; We want right alignment
-	stx LeftAligned
+	lda #$00			; We want right alignment
+	sta LeftAligned
+	lda #$01
+	jsr PrintByteDec
 
-	inx					; Skip the first digit otherwise it would be 4
-	txa					; We only need 3 digits
-	ldy TMP_VAL_3
-	jsr BCDToString
-	sty TMP_VAL_3
+	ldx LAST_FRAME_VAL
 
-	lda TMP_VAL_2		; Max frames
-	sta BINVal			; First print the CurFrame value
-	lda #$00
-	sta BINVal+1
-	jsr BinToBCD16
 	lda #$01			; Skip the first digit otherwise it would be 4
-	tax					; We only need 3 digits
-	ldy TMP_VAL_3
 	iny
-	jmp BCDToString
+	jmp PrintByteDec
 .endproc
-
-.if 0
-; Create a sprite shape which makes the border edges better visible.
-.proc CreateDebugSprite
-	DEBUG_SPRITE_PTR = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-
-	ldy #3*21
-	lda #255
-
-@InitSprite:
-	sta DEBUG_SPRITE_PTR-1,y
-	dey
-	bne @InitSprite
-
-	lda #0
-	sta DEBUG_SPRITE_PTR+1
-	sta DEBUG_SPRITE_PTR+(3*20)+1
-
-	lda #$7f
-	sta DEBUG_SPRITE_PTR+(3*7)
-	sta DEBUG_SPRITE_PTR+(3*8)
-	sta DEBUG_SPRITE_PTR+(3*9)
-	sta DEBUG_SPRITE_PTR+(3*10)
-	sta DEBUG_SPRITE_PTR+(3*11)
-	sta DEBUG_SPRITE_PTR+(3*12)
-	sta DEBUG_SPRITE_PTR+(3*13)
-
-	lda #$fe
-
-	sta DEBUG_SPRITE_PTR+(3*7)+2
-	sta DEBUG_SPRITE_PTR+(3*8)+2
-	sta DEBUG_SPRITE_PTR+(3*9)+2
-	sta DEBUG_SPRITE_PTR+(3*10)+2
-	sta DEBUG_SPRITE_PTR+(3*11)+2
-	sta DEBUG_SPRITE_PTR+(3*12)+2
-	sta DEBUG_SPRITE_PTR+(3*13)+2
-
-	rts
-.endproc
-.endif
 
 .proc ToggleSpritePixel
 	jsr SetDirty
@@ -2059,6 +1997,26 @@ MAIN_APPLICATION = *
 	jmp MoveCursorRight
 .endproc
 
+; Check if the current frame has changes. If yes
+; it will be copied to it's target.
+;
+; PARAMS:
+; X - Target frame
+.proc SaveDirty
+	lda EditFlags
+	and #EDIT_DIRTY
+	beq @SkipCopy
+
+	jsr ClearDirty
+
+	; Copy the current editor frame to the sprite
+	ldy #SPRITE_PREVIEW_SRC
+	jmp CopySpriteFrame
+
+@SkipCopy:
+	rts
+.endproc
+
 .proc SetDirty
 	lda EditFlags
 	ora #EDIT_DIRTY
@@ -2077,58 +2035,43 @@ MAIN_APPLICATION = *
 
 	; Copy the current edit buffer to the sprite frame buffer
 	ldx CurFrame
-	ldy #SPRITE_PREVIEW_SRC
-	jsr CopySpriteFrame
-	jsr ClearDirty
+	jsr SaveDirty
 
 	jsr WaitKeyboardRelease
 	jsr GetSpriteSaveInfo
 	lbeq @Cancel
 
-	SetPointer OpenFileTxt, STRING_PTR
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
-	ldy #0
-	jsr ClearLine
-	ldy #SCREEN_COLUMNS
-	jsr ClearLine
-	ldy #$00
-	jsr PrintStringZ
-
-	SetPointer Filename, STRING_PTR
-	ldy #12
-	ldx FilenameLen
-	jsr PrintPETSCII
-
 	; Enable kernel for our saving calls
 	lda #$00
 	sta FARCALL_MEMCFG
 
-	; File set parameters
-	lda #2				; Fileno
-	ldx DiskDrive		; Device
-	ldy #5				; secondary address
-	jsr SETFPAR
+	; Calculate address of first frame where we want
+	; to save from
+	lda FileFrameStart
+	jsr CalcFramePointer
 
-	lda #0				; RAM bank to load file
-	ldx #0				; RAM bank of filename
-	jsr SETBANK
+	lda FramePtr
+	sta MEMCPY_SRC
+	lda FramePtr+1
+	sta MEMCPY_SRC+1
 
-	lda #'w'
-	jsr OpenFile
-	bcc :+
-	jmp FileError
-:
-	; Switch output to our file
-	SetPointer CKOUT, FARCALL_PTR
-	ldx #2
-	jsr FARCALL
-	bcc :+
-	jmp FileError
-:
-	ldy #0
-	jsr ClearLine
+	lda FileFrameEnd
+	jsr CalcFramePointer
+
+	; End of frame
+	clc
+	lda FramePtr
+	adc #SPRITE_BUFFER_LEN
+	sta MEMCPY_TGT
+	lda FramePtr+1
+	adc #$00
+	sta MEMCPY_TGT+1
 
 	; print WRITING ...
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #$00
+	jsr ClearLine
+
 	SetPointer WritingTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
@@ -2142,78 +2085,48 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	sta STRING_PTR+1
 
-	; Calculate address of first frame where we want
-	; to save from
 	lda FileFrameStart
-	jsr CalcFramePointer
-
-	lda FramePtr
-	sta DATA_PTR
-	lda FramePtr+1
-	sta DATA_PTR+1
-
-	lda FileFrameStart
-	sta FileFrameCur
-
-	; Write a single character to disk
-	SetPointer BSOUT, FARCALL_PTR
-	ldy #19
-
-	; Write a single sprite buffer
-@NextFrame:
-	lda FileFrameCur
 	ldx FileFrameEnd
 	ldy #14
 	jsr PrintFrameCounter
-	ldy #$00		; Current byte of the sprite
-	sty FilePosY
 
-@WriteFrame:
-	lda (DATA_PTR),y
-	inc FilePosY
-	jsr FARCALL		; Write byte
-	bcc :+
+	lda #$00
+	sta FileFrameStart
+	sta FileFrameCur
 
-	; Write error
-	jmp FileError
-
-:
-	ldy FilePosY
-	cpy #SPRITE_BUFFER_LEN				; Size of a sprite block
-	bne	@WriteFrame
-
-	ldy FileFrameCur
-	iny
-	sty FileFrameCur
-	cpy FileFrameEnd
-	bgt @Done
-
-	; Switch to next sprite buffer
-	clc
-	lda DATA_PTR
-	adc #SPRITE_BUFFER_LEN
-	sta DATA_PTR
-	lda DATA_PTR+1
-	adc #$00
-	sta DATA_PTR+1
-	jmp @NextFrame
-
-@Done:
-	lda #2
-	jsr CloseFile
+	SetPointer SpriteSaveProgress, FileProgressPtr
+	jsr SaveFile
 
 	SetPointer DoneTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
 	jsr Delay
-	jsr ClearStatusLines
-
-	rts
+	jmp ClearStatusLines
 
 @Cancel:
 	; Print cancel text in status line
 	SetPointer CanceledTxt, STRING_PTR
 	jmp ShowStatusLine
+.endproc
+
+.proc SpriteSaveProgress
+
+	ldx FileFrameCur
+	inx
+	cpx #SPRITE_BUFFER_LEN-1
+	bne @Done
+
+	lda FileFrameStart
+	ldx FileFrameEnd
+	ldy #14
+	jsr PrintFrameCounter
+
+	inc FileFrameStart
+	ldx #$00
+
+@Done:
+	stx FileFrameCur
+	rts
 .endproc
 
 .proc ShowStatusLine
@@ -2619,17 +2532,33 @@ MAIN_APPLICATION = *
 ; file.
 ;
 ; PARAM:
-; A - 'r' for read or 'w' for write
 ; Filename - Filename in PETSCII
 ; FilenameLen - Length of the filename
+; MEMCPY_SRC	- Startadress
+; MEMCPY_TGT	- Endadress
+; FileProgressPtr
 ;
 ; RETURN:
 ; STATUS - Errorstatus from OS
 ;
 .proc SaveFile
+	lda #'w'			; Write mode
+	ldy #2				; Fileno
+	ldx DiskDrive		; Device
 	jsr OpenFile
+	bcc :+
+	jmp FileError
 
+:
+	ldx #2
+	jsr WriteFile
+	bcc :+
+	jmp FileError
+
+:
+	lda #2
 	jsr CloseFile
+
 	rts
 .endproc
 
@@ -2638,6 +2567,8 @@ MAIN_APPLICATION = *
 ;
 ; PARAM:
 ; A - 'r' for read or 'w' for write
+; X - Devicenumber
+; Y - Filenumber
 ; Filename - Filename in PETSCII
 ; FilenameLen - Length of the filename
 ;
@@ -2647,6 +2578,17 @@ MAIN_APPLICATION = *
 .proc OpenFile	; Prepare filename by appending 
 
 	pha
+
+	; File set parameters
+	tya					; Fileno
+	ldx DiskDrive		; Device
+	ldy #5				; secondary address
+	jsr SETFPAR
+
+	lda #0				; RAM bank to load file
+	ldx #0				; RAM bank of filename
+	jsr SETBANK
+
 	; ',S,W' to open a SEQ file for writing
 	ldy FilenameLen
 	lda #','
@@ -2673,9 +2615,7 @@ MAIN_APPLICATION = *
 
 	; Open the file
 	SetPointer OPEN, FARCALL_PTR
-	jsr FARCALL
-
-	rts
+	jmp FARCALL
 .endproc
 
 ; Close the file which was previously opened
@@ -2696,6 +2636,70 @@ MAIN_APPLICATION = *
 	SetPointer CLRCH, FARCALL_PTR
 	jsr FARCALL
 	rts
+.endproc
+
+; Write a memoryblock to an already opened file
+;
+; PARAM:
+; X - Fileno
+; MEMCPY_SRC	- Startadress
+; MEMCPY_TGT	- Endadress
+; FileProgressPtr
+;
+; RETURN:
+; STATUS - Errorstatus from OS
+;
+.proc WriteFile
+
+	BSOUT_CALL = FARCALL
+
+	; Switch output to our file
+	SetPointer CKOUT, FARCALL_PTR
+	ldx #2
+	jsr FARCALL
+	bcc :+
+	jmp FileError
+:
+
+	; Write a single character to disk
+	SetPointer BSOUT, FARCALL_PTR
+
+	lda #$00
+	sta FilePos
+
+@WriteByte:
+	ldy #$00
+	lda (MEMCPY_SRC),y
+	jsr BSOUT_CALL		; Write byte in A
+	bcc :+
+
+	; Write error
+	jmp FileError
+:
+	clc
+	lda MEMCPY_SRC
+	adc #1
+	sta MEMCPY_SRC
+	lda MEMCPY_SRC+1
+	adc #$00
+	sta MEMCPY_SRC+1
+
+	jsr ShowFileProgress
+
+	lda MEMCPY_SRC+1
+	cmp MEMCPY_TGT+1
+	bne @WriteByte
+	lda MEMCPY_SRC
+	cmp MEMCPY_TGT
+	bne @WriteByte
+
+@Done:
+	clc
+	rts
+.endproc
+
+.proc ShowFileProgress
+	jmp (FileProgressPtr)
 .endproc
 
 .proc FileError
@@ -2818,6 +2822,10 @@ FileFrameStart: .byte 0		; first frame to save
 FileFrameEnd: .byte 0		; last frame to save
 FileFrameCur: .byte 0		; current frame to save
 
+FilePos: .byte 0			; Helper for saving current index when writing/loading a file
+FilePosBlock: .byte 0		; Blocksize of current save/load block
+FileProgressPtr: .word 0
+
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberMsgLen = *-EnterNumberMsg
 
@@ -2836,9 +2844,6 @@ MoveLastFrame: .byte 0
 MoveTargetFrame: .byte 0
 MoveDirection: .word 0
 
-; Temp for storing the current index in the spritebuffer
-; while loading/saving.
-FilePosY: .byte 0
 
 ; Characters to be used for the sprite preview border
 ; on the bottom line. This depends on the size, because
@@ -2878,10 +2883,12 @@ KeyMapBasePtr: .word 0
 KeyMapFunction: .word 0
 KeyMapModifier: .byte 0	; Copy of KeyModifier to handle SHIFT flags
 
-.macro  DefineKey	Modifier, Code, Function
+.macro  DefineKey	Modifier, Code, Flags, Function
 	.byte Modifier, Code
+	.byte Flags
 	.word Function
 .endmacro
+KEYMAP_SIZE = 5
 
 ; NOTE: When defining a key assignment using SHIFT keys we can
 ; only use either KEY_SHIFT or KEY_SHIFT_LEFT/KEY_SHIFT_RIGHT.
@@ -2898,46 +2905,46 @@ KeyMapModifier: .byte 0	; Copy of KeyModifier to handle SHIFT flags
 ;	Space key + RIGHT SHIFT only will trigger
 ;	DefineKey KEY_SHIFT_RIGHT, $20, Function
 SpriteEditorKeyMap:
-	DefineKey 0, $20, ToggleSpritePixel				; SPACE
-	DefineKey 0, $1d, MoveCursorRight				; CRSR-Right
-	DefineKey 0, $11, MoveCursorDown				; CRSR-Down
-	DefineKey 0, $2e, NextFrame						; .
-	DefineKey 0, $2c, PreviousFrame					; ,
-	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
-	DefineKey 0, $13, MoveCursorHome				; HOME
-	DefineKey 0, $43, CopyFromFrame					; C
-	DefineKey 0, $44, DeleteCurrentFrame			; D
-	DefineKey 0, $47, GotoFrame						; G
-	DefineKey 0, $49, InvertSprite					; I
-	DefineKey 0, $4e, AppendFrameKey				; N
-	DefineKey 0, $4c, LoadSprites					; L
-	DefineKey 0, $53, SaveSprites					; S
-	DefineKey 0, $4d, ToggleMulticolor				; M
-	DefineKey 0, $58, TogglePreviewX				; X
-	DefineKey 0, $59, TogglePreviewY				; Y
-	DefineKey 0, '1', IncSpriteColor1				; 1
-	DefineKey 0, '2', IncSpriteColor2				; 2
-	DefineKey 0, '3', IncSpriteColor3				; 3
-	DefineKey 0, $55, UndoFrame						; U
+	DefineKey 0, $20, REPEAT_KEY,    ToggleSpritePixel				; SPACE
+	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
+	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
+	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
+	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
+	DefineKey 0, $14, NO_REPEAT_KEY, ClearPreviewSpriteKey			; DEL
+	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
+	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
+	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
+	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
+	DefineKey 0, $49, NO_REPEAT_KEY, InvertSprite					; I
+	DefineKey 0, $4e, NO_REPEAT_KEY, AppendFrameKey					; N
+	DefineKey 0, $4c, NO_REPEAT_KEY, LoadSprites					; L
+	DefineKey 0, $53, NO_REPEAT_KEY, SaveSprites					; S
+	DefineKey 0, $4d, NO_REPEAT_KEY, ToggleMulticolor				; M
+	DefineKey 0, $58, NO_REPEAT_KEY, TogglePreviewX					; X
+	DefineKey 0, $59, NO_REPEAT_KEY, TogglePreviewY					; Y
+	DefineKey 0, '1', NO_REPEAT_KEY, IncSpriteColor1				; 1
+	DefineKey 0, '2', NO_REPEAT_KEY, IncSpriteColor2				; 2
+	DefineKey 0, '3', NO_REPEAT_KEY, IncSpriteColor3				; 3
+	DefineKey 0, $55, NO_REPEAT_KEY, UndoFrame						; U
 
 	; SHIFT keys
-	DefineKey KEY_SHIFT, $9d, MoveCursorLeft		; CRSR-Left
-	DefineKey KEY_SHIFT, $91, MoveCursorUp			; CRSR-Up
-	DefineKey KEY_SHIFT, $ce, AppendFrameCopy		; SHIFT-N
-	DefineKey KEY_SHIFT, $3e, NextFrame				; SHIFT-.
-	DefineKey KEY_SHIFT, $3c, PreviousFrame			; SHIFT-,
+	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; CRSR-Left
+	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; CRSR-Up
+	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, AppendFrameCopy		; SHIFT-N
+	DefineKey KEY_SHIFT, $3e, REPEAT_KEY,    NextFrame				; SHIFT-.
+	DefineKey KEY_SHIFT, $3c, REPEAT_KEY,    PreviousFrame			; SHIFT-,
 
 	; Extended keys
-	DefineKey KEY_EXT, $1d, MoveCursorRight			; CRSR-Right/Keypad
-	DefineKey KEY_EXT, $9d, MoveCursorLeft			; CRSR-Left/Keypad
-	DefineKey KEY_EXT, $11, MoveCursorDown			; CRSR-Down/Keypad
-	DefineKey KEY_EXT, $91, MoveCursorUp			; CRSR-Up/Keypad
+	DefineKey KEY_EXT, $1d, REPEAT_KEY,      MoveCursorRight		; CRSR-Right/Keypad
+	DefineKey KEY_EXT, $9d, REPEAT_KEY,      MoveCursorLeft			; CRSR-Left/Keypad
+	DefineKey KEY_EXT, $11, REPEAT_KEY,      MoveCursorDown			; CRSR-Down/Keypad
+	DefineKey KEY_EXT, $91, REPEAT_KEY,      MoveCursorUp			; CRSR-Up/Keypad
 
-	DefineKey KEY_EXT|KEY_SHIFT, $1d, NextFrame		; CRSR-Right/Keypad
-	DefineKey KEY_EXT|KEY_SHIFT, $9d, PreviousFrame	; CRSR-Left/Keypad
+	DefineKey KEY_EXT|KEY_SHIFT, $1d, REPEAT_KEY, NextFrame			; CRSR-Right/Keypad
+	DefineKey KEY_EXT|KEY_SHIFT, $9d, REPEAT_KEY, PreviousFrame		; CRSR-Left/Keypad
 
 	; End of map
-	DefineKey 0,0,0
+	DefineKey 0,0,0,0
 
 KeyTableLen = KEY_LINES*8
 KeyTables = *

@@ -1,5 +1,9 @@
 ; https://codebase64.org/doku.php?id=base:more_hexadecimal_to_decimal_conversion
 
+; Convert a binary 16 bit value to a 3 byte BCD number
+;
+; PARAMS:
+; BinVal - Lo/Hi
 
 .ifndef _BINTOBCD16_INC
 _BINTOBCD16_INC = 1
