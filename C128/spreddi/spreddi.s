@@ -20,6 +20,8 @@ KEYMAP_PTR			= ZP_BASE+4
 MEMCPY_SRC			= ZP_BASE+6
 MEMCPY_TGT			= ZP_BASE+8
 MEMCPY_LEN			= ZP_BASE+10
+MEMCPY_LEN_LO		= ZP_BASE+10
+MEMCPY_LEN_HI		= ZP_BASE+11
 CURSOR_LINE			= ZP_BASE+12
 PIXEL_LINE			= ZP_BASE+14
 
@@ -82,6 +84,9 @@ CHAR_SPLIT_TOP			= $72
 ; MMU Konfiguration. Data Becker 128 Intern P. 150
 EDITOR_RAM_CFG			= %00001110	; Bank 0 + $D000 + $C000-$FFFF
 EDITOR_COMMON_RAM_CFG	= %00000000 ; No common area 
+
+EDITOR_NO_REPEAT_KEY	= $00		; Editor wont repeat this key default
+EDITOR_REPEAT_KEY		= $80		; Editor can repeat this key (i.e. cursor keys)
 
 .export __LOADADDR__ = *
 .export STARTADDRESS = *
@@ -287,6 +292,9 @@ basicstub:
 	; Init the default keyboardhandler
 	SetPointer (EditorKeyboardHandler), EditorKeyHandler
 
+	lda #8
+	sta DiskDrive
+
 	rts
 
 .endproc
@@ -341,41 +349,7 @@ basicstub:
 	rts
 .endproc
 
-.proc MemCopyReverse
-
-	ldy #$00
-
-	sec
-	lda MEMCPY_SRC
-	sbc #$01
-	sta MEMCPY_SRC
-	lda MEMCPY_SRC+1
-	sbc #$00
-	sta MEMCPY_SRC+1
-
-	sec
-	lda MEMCPY_TGT
-	sbc #$01
-	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
-	sbc #$00
-	sta MEMCPY_TGT+1
-
-	lda (MEMCPY_SRC),y
-	sta (MEMCPY_TGT),y
-
-	dec MEMCPY_LEN
-	bne MemCopyReverse
-
-	dec MEMCPY_LEN+1
-	bpl MemCopyReverse
-
-	lda #8
-	sta DiskDrive
-
-	rts
-
-.endproc
+.include "mem/memcpy.s"
 
 ; FARCALL is used to call a function
 ; across the bank boundaries.
@@ -497,8 +471,9 @@ basicstub:
 	sta (MEMCPY_TGT),y
 
 	dey
-	cpy #$ff
 	bne @Loop
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
 
 	rts
 .endproc
@@ -607,7 +582,7 @@ MAIN_APPLICATION = *
 	; CURSOR processing, disables this, as we
 	; want them to repeat. They have to reset
 	; this on their own.
-	lda #$00
+	lda #EDITOR_NO_REPEAT_KEY
 	sta EditorWaitRelease
 .endproc
 
@@ -920,7 +895,7 @@ MAIN_APPLICATION = *
 	sty EditCursorX
 
 	; Enable repeat mode
-	lda #$80
+	lda #EDITOR_REPEAT_KEY
 	sta EditorWaitRelease
 
 	rts
@@ -960,7 +935,7 @@ MAIN_APPLICATION = *
 	sta (CURSOR_LINE),y
 
 	; Enable repeat mode
-	lda #$80
+	lda #EDITOR_REPEAT_KEY
 	sta EditorWaitRelease
 
 @Done:
@@ -1002,7 +977,7 @@ MAIN_APPLICATION = *
 	sta (CURSOR_LINE),y
 
 	; Enable repeat mode
-	lda #$80
+	lda #EDITOR_REPEAT_KEY
 	sta EditorWaitRelease
 
 @Done:
@@ -1494,7 +1469,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc NextFrame
-	lda #$80
+	lda #EDITOR_REPEAT_KEY
 	sta EditorWaitRelease
 
 	ldy CurFrame
@@ -1509,7 +1484,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc PreviousFrame
-	lda #$80
+	lda #EDITOR_REPEAT_KEY
 	sta EditorWaitRelease
 
 	ldy CurFrame
@@ -1540,21 +1515,74 @@ MAIN_APPLICATION = *
 	cpy #$00
 	beq @Cancel
 
+	; Frame number we go to.
 	tay
 
+	; Reset the empty input flag to default.
 	lda #$00
 	sta EnterNumberEmpty
 
-	; Already there?
+	; User entered the current frame number?
 	cpy CurFrame
-	beq @Cancel
+	beq @Cancel		; Then we are done.
 
 	ldx CurFrame
 	jsr SwitchFrame
 
+	; Clear the input control
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	ldy #0
 	jmp ClearLine
+
+@Cancel:
+	rts
+.endproc
+
+.proc DeleteCurrentFrame
+	ldx MaxFrame
+	beq @Cancel		; No more frames
+
+	; Either we are positioned on the last frame, in this
+	; case we don't need to copy anything and can just decrease
+	; CurFrame and MaxFrame.
+	; Example: User is positioned on 10/10
+	;          so frame 10 is deleted.
+	;          User is now on 9/9.
+	txa			; Remember last frame to copy, just in case
+				; we need it (10 from example)
+	dex
+	stx MaxFrame
+
+	; If we deleted the last frame we are done
+	; as we don't need to copy anything
+	cmp CurFrame
+	beq @LastFrame
+
+	; We are currently on some frame which is not the last one,
+	; so we need to copy everything from the next frame until
+	; the end down to the current frame, which is the one to
+	; be deleted.
+	; Example: User is positioned on 5/10
+	;          Current frame stays at 5
+	;          6-10 is moved down to 5
+	;          User is on 5/9
+	ldx CurFrame		; 5 (from example)
+	inx					; Copy from 6
+	ldy CurFrame		; To 5
+
+	; X - First frame
+	; A - Last frame
+	; Y - Target frame
+	jsr CopyFrameBufferRange
+	jmp UpdateFrameEditor
+
+@LastFrame:
+	; We were on the last frame, so the current
+	; frame is also decreased.
+	stx CurFrame
+
+@Update:
+	jmp UpdateFrameEditor
 
 @Cancel:
 	rts
@@ -1659,15 +1687,7 @@ MAIN_APPLICATION = *
 .proc SwitchFrame
 	sty CurFrame
 
-	lda EditFlags
-	and #EDIT_DIRTY
-	beq @SkipCopy
-
-	; Copy the current editor frame to the sprite
-	ldy #SPRITE_PREVIEW_SRC
-	jsr CopySpriteFrame
-
-@SkipCopy:
+	jsr SaveDirty
 	jmp UpdateFrameEditor
 .endproc
 
@@ -1680,6 +1700,26 @@ MAIN_APPLICATION = *
 	jmp UpdateFrameEditor
 .endproc
 
+; Check if the current frame has changes. If yes
+; it will be copied to it's target.
+;
+; PARAMS:
+; X - Target frame
+.proc SaveDirty
+	lda EditFlags
+	and #EDIT_DIRTY
+	beq @SkipCopy
+
+	jsr ClearDirty
+
+	; Copy the current editor frame to the sprite
+	ldy #SPRITE_PREVIEW_SRC
+	jmp CopySpriteFrame
+
+@SkipCopy:
+	rts
+.endproc
+
 ; Copy the sprite buffer from source to target
 ;
 ; PARAM:
@@ -1689,7 +1729,7 @@ MAIN_APPLICATION = *
 ;     SPRITE_PREVIEW_SRC - Copy sprite from preview to target
 ;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
 ;
-; If Y is not 0 the value in A or X is ignored
+; If Y is not 0, the value in A or X is ignored
 ; depending on Y. If Y is SPRITE_PREVIEW_SRC then
 ; A is ignored, otherwise X. Only if Y is 0
 ; will both values be needed.
@@ -1717,7 +1757,7 @@ MAIN_APPLICATION = *
 	and #SPRITE_PREVIEW_SRC
 	beq @CalcSrc
 	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_SRC
-	jmp @Copy
+	jmp CopyFrameBuffer
 
 @CalcSrc:
 	lda MEMCPY_SRC
@@ -1726,10 +1766,63 @@ MAIN_APPLICATION = *
 	sta MEMCPY_SRC
 	lda FramePtr+1
 	sta MEMCPY_SRC+1
+.endproc
 
-@Copy:
+; Copy a single sprite frame buffer
+;
+; PARAMS:
+; MEMCPY_SRC
+; MEMCPY_TGT
+.proc CopyFrameBuffer
 	ldy #SPRITE_BUFFER_LEN
 	jmp memcpy255
+
+.endproc
+
+; Copy a range of frames. The caller is
+; responsible that the values are not
+; beyond the boundaries 0 < N < MAX_FRAME.
+;
+; PARAMS:
+; X - First frame
+; A - Last frame
+; Y - Target frame
+;
+.proc CopyFrameBufferRange
+
+	sta MoveLastFrame
+	stx MoveFirstFrame
+	sty MoveTargetFrame
+
+	txa
+	jsr CalcFramePointer
+	lda FramePtr
+	sta MEMCPY_SRC
+	lda FramePtr+1
+	sta MEMCPY_SRC+1
+
+	lda MoveTargetFrame
+	jsr CalcFramePointer
+	lda FramePtr
+	sta MEMCPY_TGT
+	lda FramePtr+1
+	sta MEMCPY_TGT+1
+
+	; Last frame is increased by 1 because we want the
+	; endaddress of the last frame.
+	ldx MoveLastFrame
+	inx
+	txa
+	jsr CalcFramePointer
+
+	; Now calculate the length of the blocks
+	sec
+	lda FramePtr
+	sbc MEMCPY_SRC
+	tax
+	lda FramePtr+1
+	sbc MEMCPY_SRC+1
+	jmp memcpy
 
 .endproc
 
@@ -2522,6 +2615,24 @@ MAIN_APPLICATION = *
 	jmp @InputLoop
 .endproc
 
+; Write a memoryblock into a sequential
+; file.
+;
+; PARAM:
+; A - 'r' for read or 'w' for write
+; Filename - Filename in PETSCII
+; FilenameLen - Length of the filename
+;
+; RETURN:
+; STATUS - Errorstatus from OS
+;
+.proc SaveFile
+	jsr OpenFile
+
+	jsr CloseFile
+	rts
+.endproc
+
 ; Open a sequential file for reading or writing.
 ; Filename must be already present.
 ;
@@ -2719,6 +2830,12 @@ EnterNumberMaxVal: .byte 0
 EnterNumberStringPtr: .word 0
 EnterNumberConsolePtr: .word 0
 
+MoveFrameCnt: .byte 0
+MoveFirstFrame: .byte 0
+MoveLastFrame: .byte 0
+MoveTargetFrame: .byte 0
+MoveDirection: .word 0
+
 ; Temp for storing the current index in the spritebuffer
 ; while loading/saving.
 FilePosY: .byte 0
@@ -2789,6 +2906,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $14, ClearPreviewSpriteKey			; DEL
 	DefineKey 0, $13, MoveCursorHome				; HOME
 	DefineKey 0, $43, CopyFromFrame					; C
+	DefineKey 0, $44, DeleteCurrentFrame			; D
 	DefineKey 0, $47, GotoFrame						; G
 	DefineKey 0, $49, InvertSprite					; I
 	DefineKey 0, $4e, AppendFrameKey				; N
@@ -2828,6 +2946,6 @@ SymKeytableShift		= KeyTables + KeyTableLen
 SymKeytableCommodore 	= KeyTables + (KeyTableLen*2)
 SymKeytableControl		= KeyTables + (KeyTableLen*3)
 SymKeytableAlt 			= KeyTables + (KeyTableLen*4)
-
+DUMMY: .byte "endofprg",0
 MAIN_APPLICATION_END = *
 END:

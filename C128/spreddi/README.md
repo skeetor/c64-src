@@ -1,43 +1,53 @@
-# Sprite and character editor for the C128
+# Sprite, character and screen editor for the C128
 
-#### Sprites
+When the editor asks you to enter a value, you can always cancel the operation by pressing RUN/STOP to return to the editor
+<br>
+<br>
+<br>
+<b>Keys (* = not implemented)</b>
 
-#### - Keys (* = not implemented)
-C - Copy from frame N to current<br>
-*D - Delete Frame N..M<br>
-I - Invert edit matrix<br>
-G - Goto frame<br>
-*H - Help screen<br>
-*L - Load file<br>
-N - New empty frame at end<br>
-SHIFT N - Append current frame at end (Copy)<br>
-*COMMODORE N - New empty frame at current position (Insert)<br>
-*CONTROL N - Insert copy of current frame at current position (Insert copy)<br>
-*O - Overlay current sprite N in sprite preview (select frame). Not sure if this might usefull or confusing<br>
-M - Multicolor<br>
-S - Save File<br>
-U - Undo changes by restore the current frame<br>
-X - Toggle Width<br>
-Y - Toggle Heigth<br>
-SPC - Toggle bit<br>
-, - Previous frame<br>
-. - Next frame<br>
-CRSR Left/Right/Up/Down - Move cursor in edit grid<br>
-SHIFT EXT CRSR Left/Right - next/previous frame<br>
-		Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left
-		is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.<br>
-HOME - Cursor to top first pixel
-DEL - Clear grid<br>
-1 - Cycle Spritecolor
-2 - Cycle Spritecolor MC0
-3 - Cycle Spritecolor MC1
+### <u><b>Common editor keys</b></u><br><br>
 
-#### Font
+### <u><b>Sprite editor</b></u><br>
+
+<b>C</b> - Copy from frame N to current<br>
+<b>*SHIFT C</b> - Copy frame N..M to target<br>
+<b>*D</b> - Delete current frame<br>
+<b>*SHIFT D</b> - Delete frame N..M<br>
+<b>I</b> - Invert edit matrix<br>
+<b>G</b> - Goto frame<br>
+<b>*H</b> - Help screen<br>
+<b>*L</b> - Load file<br>
+<b>N</b> - New empty frame at end<br>
+<b>SHIFT N</b> - Append current frame at end (Copy)<br>
+<b>*COMMODORE N</b> - New empty frame at current position (Insert)<br>
+<b>*CONTROL N</b> - Insert copy of current frame at current position (Insert copy)<br>
+<b>*O</b> - Overlay current sprite N in sprite preview (select frame). Not sure if this might usefull or confusing<br>
+<b>S</b> - Save File<br>
+<b>M</b> - Multicolor<br>
+<b>*R</b> - Rotate 90 right<br>
+<b>U</b> - Undo changes by restoring the current frame<br>
+<b>X</b> - Toggle Width<br>
+<b>Y</b> - Toggle Heigth<br>
+<b>SPC</b> - Toggle bit<br>
+<b>,</b> - Previous frame<br>
+<b>.</b> - Next frame<br>
+<b>SHIFT EXT CRSR Left/Right</b> - next/previous frame<br>
+
+    Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.
+
+<b>CRSR Left/Right/Up/Down</b> - Move cursor in edit grid<br>
+<b>HOME</b> - Cursor to top first pixel
+<b>DEL</b> - Clear grid<br>
+<b>1</b> - Cycle Spritecolor 1<br>
+<b>2</b> - Cycle Spritecolor 2 &lt;Multicolor&gt;<br>
+<b>3</b> - Cycle Spritecolor 3 &lt;Multicolor&gt;<br>
+
+### <u><b>Character editor</b></u><br><br>
+
 * Save font
 * Load font
 * Rotate 90 (left/right)
 
-#### Keys
+### <u><b>Screen editor</b></u><br><br>
 
-ESC - Quit
-D - Disk menu
