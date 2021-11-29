@@ -8,24 +8,27 @@ When the editor asks you to enter a value, you can always cancel the operation b
 
 ### <u><b>Common editor keys</b></u><br><br>
 
+These keys work in all editor modes<br><br>
+<b>*F1</b> - Sprite editor mode<br>
+<b>*F3</b> - Character editor mode<br>
+<b>*F5</b> - Screen editor mode<br>
+
 ### <u><b>Sprite editor</b></u><br>
 
 <b>C</b> - Copy from frame N to current<br>
-<b>*SHIFT C</b> - Copy frame N..M to target<br>
-<b>*D</b> - Delete current frame<br>
+<b>D</b> - Delete current frame<br>
 <b>*SHIFT D</b> - Delete frame N..M<br>
+<b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>G</b> - Goto frame<br>
 <b>*H</b> - Help screen<br>
-<b>*L</b> - Load file<br>
+<b>L</b> - Load file<br>
 <b>N</b> - New empty frame at end<br>
 <b>SHIFT N</b> - Append current frame at end (Copy)<br>
-<b>*COMMODORE N</b> - New empty frame at current position (Insert)<br>
+<b>*COMMODORE N/INS</b> - New empty frame at current position (Insert)<br>
 <b>*CONTROL N</b> - Insert copy of current frame at current position (Insert copy)<br>
-<b>*O</b> - Overlay current sprite N in sprite preview (select frame). Not sure if this might usefull or confusing<br>
 <b>S</b> - Save File<br>
 <b>M</b> - Multicolor<br>
-<b>*R</b> - Rotate 90 right<br>
 <b>U</b> - Undo changes by restoring the current frame<br>
 <b>X</b> - Toggle Width<br>
 <b>Y</b> - Toggle Heigth<br>

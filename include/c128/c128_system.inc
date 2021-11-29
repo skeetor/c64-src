@@ -106,6 +106,12 @@ BSIN				= $ffcf
 ; A - byte to write
 BSOUT				= $ffd2
 
+; Read system status
+; -
+; Return:
+; A - statuscode
+READST				= $ffb7
+
 ; To be added to cc65
 STKEY				= $91		; Flag for STOP key. If pressed $ff otherwise $7f
 INP_NDX				= $d0		; Nuber of characters in keyboard buffer

@@ -362,25 +362,25 @@ basicstub:
 	; We need AC here, so we have to save it
 	; in order to be able to pass it on to the
 	; FARCALL.
-	sta FARCALL_RESTORE
+	pha
 
 	; Switch to the new memory layout
 	lda FARCALL_MEMCFG
 	sta MMU_PRE_CRC
 	sta MMU_LOAD_CRC
+	pla
 
-	; Save the address so the memory
-	; will be reset
-	phr @SysRestore
-	lda FARCALL_RESTORE
-
-	jmp (FARCALL_PTR)
+	jsr FarCaller
 
 @SysRestore:
 
 	sta MMU_LOAD_CRD	; Switch back to our bank
 
 	rts
+.endproc
+
+.proc FarCaller
+	jmp (FARCALL_PTR)
 .endproc
 
 ; Copy the kernel key decoding tables to our memory
@@ -2041,10 +2041,6 @@ MAIN_APPLICATION = *
 	jsr GetSpriteSaveInfo
 	lbeq @Cancel
 
-	; Enable kernel for our saving calls
-	lda #$00
-	sta FARCALL_MEMCFG
-
 	; Calculate address of first frame where we want
 	; to save from
 	lda FileFrameStart
@@ -2152,36 +2148,16 @@ MAIN_APPLICATION = *
 	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
-	tya
-	pha
-
-	SetPointer DriveTxt, STRING_PTR
-	ldy #20
-	jsr PrintStringZ
-
-	pla
-	tay
 	jsr EnterFrameNumbers
 	cmp #$00
 	beq @Cancel
-
-	; Get drive number 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+27), CONSOLE_PTR
-	lda #$02
-	sta EnterNumberStrLen
-	lda DiskDrive
-	ldx #8
-	ldy #11
-	jsr EnterNumberReg
-	cpy #1
-	bne @Cancel
-	sta DiskDrive
 
 	ldy #0
 	jsr ClearLine
 
 	; And finally get the filename
 	jsr EnterFilename
+	beq @Cancel
 
 	ldy #0
 	jsr ClearLine
@@ -2268,10 +2244,14 @@ MAIN_APPLICATION = *
 	ldx FilenameLen
 	jsr PrintString
 
+	SetPointer DriveTxt, STRING_PTR
+	ldy #27
+	jsr PrintStringZ
+
+@InputLoop:
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+FilenameTxtLen), CONSOLE_PTR
 	SetPointer Filename, STRING_PTR
 
-@InputLoop:
 	ldx FilenameLen
 	ldy #16
 	jsr Input
@@ -2283,7 +2263,22 @@ MAIN_APPLICATION = *
 	beq @EmptyFilename
 	sty FilenameLen
 
-	lda #$10
+	; Get drive number 
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+33), CONSOLE_PTR
+
+	lda #$02
+	sta EnterNumberStrLen
+
+	lda DiskDrive
+	ldx #8
+	ldy #12
+	jsr EnterNumberReg
+	cpy #1
+	bne @Cancel
+	sta DiskDrive
+
+	; Success
+	lda #$01
 	rts
 
 @Cancel:
@@ -2542,24 +2537,63 @@ MAIN_APPLICATION = *
 ; STATUS - Errorstatus from OS
 ;
 .proc SaveFile
+	lda #$00
+	sta STATUS
+
 	lda #'w'			; Write mode
 	ldy #2				; Fileno
 	ldx DiskDrive		; Device
 	jsr OpenFile
-	bcc :+
-	jmp FileError
+	lda STATUS
+	bne @Error
 
-:
 	ldx #2
 	jsr WriteFile
-	bcc :+
-	jmp FileError
+	lda STATUS
+	beq :+
 
+@Error:
+	jsr FileError
 :
 	lda #2
 	jsr CloseFile
+	lda STATUS
+	beq @Done
 
+	jmp FileError
+@Done:
 	rts
+.endproc
+
+; Write a memoryblock into a sequential
+; file.
+;
+; PARAM:
+; Filename - Filename in PETSCII
+; FilenameLen - Length of the filename
+; MEMCPY_SRC	- Startadress
+; MEMCPY_TGT	- Endadress
+; FileProgressPtr
+;
+; RETURN:
+; STATUS - Errorstatus from OS
+;
+.proc LoadFile
+	lda #'r'			; Write mode
+	ldy #2				; Fileno
+	ldx DiskDrive		; Device
+	jsr OpenFile
+	bcs @Error
+
+	ldx #2
+	jsr ReadFile
+	bcc :+
+
+@Error:
+	jsr FileError
+:
+	lda #2
+	jmp CloseFile
 .endproc
 
 ; Open a sequential file for reading or writing.
@@ -2589,12 +2623,12 @@ MAIN_APPLICATION = *
 	ldx #0				; RAM bank of filename
 	jsr SETBANK
 
-	; ',S,W' to open a SEQ file for writing
+	; ',P,W' to open a file for writing
 	ldy FilenameLen
 	lda #','
 	sta Filename,y
 	iny
-	lda #'s'
+	lda #'p'
 	sta Filename,y
 	iny
 	lda #','
@@ -2603,8 +2637,7 @@ MAIN_APPLICATION = *
 	pla
 	sta Filename,y
 
-	SetPointer CLRCH, FARCALL_PTR
-	jsr FARCALL
+	jsr CLRCH
 
 	lda FilenameLen
 	clc
@@ -2614,8 +2647,7 @@ MAIN_APPLICATION = *
 	jsr SETNAME
 
 	; Open the file
-	SetPointer OPEN, FARCALL_PTR
-	jmp FARCALL
+	jmp OPEN
 .endproc
 
 ; Close the file which was previously opened
@@ -2625,17 +2657,13 @@ MAIN_APPLICATION = *
 ;
 .proc CloseFile
 
-	pha
-	; Well, it's evident. :)
-	SetPointer CLOSE, FARCALL_PTR
-	pla
-	jsr FARCALL
+	jsr CLOSE
 
 	; Clear output and reset to STDIN
 	; before closing
-	SetPointer CLRCH, FARCALL_PTR
-	jsr FARCALL
-	rts
+	;SetPointer CLRCH, FARCALL_PTR
+	;jsr FARCALL
+	jmp CLRCH
 .endproc
 
 ; Write a memoryblock to an already opened file
@@ -2651,27 +2679,20 @@ MAIN_APPLICATION = *
 ;
 .proc WriteFile
 
-	BSOUT_CALL = FARCALL
-
 	; Switch output to our file
-	SetPointer CKOUT, FARCALL_PTR
 	ldx #2
-	jsr FARCALL
-	bcc :+
+	jsr CKOUT
+	lda STATUS
+	beq :+
 	jmp FileError
 :
-
 	; Write a single character to disk
-	SetPointer BSOUT, FARCALL_PTR
-
-	lda #$00
-	sta FilePos
-
 @WriteByte:
 	ldy #$00
 	lda (MEMCPY_SRC),y
-	jsr BSOUT_CALL		; Write byte in A
-	bcc :+
+	jsr BSOUT		; Write byte in A
+	lda STATUS
+	beq :+
 
 	; Write error
 	jmp FileError
@@ -2698,6 +2719,61 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Read an already opened file
+;
+; PARAM:
+; X - Fileno
+; MEMCPY_TGT	- Startadress
+; FileProgressPtr - I it returns with carry
+;     set, the load operation is finished even
+;     if the file was not fully read. No error
+;     is reported in this case.
+;
+; RETURN:
+; STATUS - Errorstatus from OS
+;
+.proc ReadFile
+
+	; Switch output to our file
+	ldx #2
+	jsr CHKIN
+	lda STATUS
+	beq :+
+	jmp FileError
+:
+	; Read a single character
+@ReadByte:
+	lda #$00
+	sta STATUS
+	jsr BSIN
+	ldy #$00
+	sta (MEMCPY_TGT),y
+
+	lda STATUS
+	and #%01000000		; EOF
+	bne @Done
+	lda STATUS
+	beq :+
+	jmp FileError
+:
+	jsr ShowFileProgress
+	bcs @Done
+
+	clc
+	lda MEMCPY_TGT
+	adc #1
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
+	adc #$00
+	sta MEMCPY_TGT+1
+	jmp @ReadByte
+
+@Done:
+	clc
+	rts
+
+.endproc
+
 .proc ShowFileProgress
 	jmp (FileProgressPtr)
 .endproc
@@ -2705,7 +2781,7 @@ MAIN_APPLICATION = *
 .proc FileError
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 
-	bit $90
+	bit STATUS
 	bpl @UnknownError
 
 	; Device not present error
@@ -2715,14 +2791,28 @@ MAIN_APPLICATION = *
 	jmp @Done
 
 @UnknownError:
+	ldx DiskDrive
+	jsr ReadDiscStatus
+	bne @IOError
+
+	SetPointer DiscStatusString, STRING_PTR
+	ldx DiscStatusStringLen
+	beq @IOError
+	jmp @PrintMessage
+
+@IOError:
 	; Some unspecified error (most likely read or write error)
 	SetPointer ErrorFileIOTxt, STRING_PTR
+	ldx #ErrorFileIOTxtLen 
+
+@PrintMessage:
 	ldy #SCREEN_COLUMNS
-	jsr PrintStringZ
+	jsr PrintString
 
 @Done:
 	jsr Flash
-	jsr Delay
+	jsr WaitKeyboardPressed
+	jsr WaitKeyboardRelease
 
 @Close:
 	lda #2
@@ -2732,29 +2822,104 @@ MAIN_APPLICATION = *
 	jsr ClearLine
 	ldy #SCREEN_COLUMNS
 	jsr ClearLine
+	lda #$00
+	sta STATUS
 	rts
 .endproc
 
 .proc LoadSprites
 
-	lda #0			; Fileno
-	ldx DiskDrive	; Device
-	ldy #0			; Load with address (1 = loadadress is in file)
-	jsr SETFPAR
+	jsr WaitKeyboardRelease
+	jsr EnterFilename
+	lbeq @Cancel
 
-	lda #'r'
-	jsr OpenFile
-	lda STATUS
+	; Reset to first frame
+	lda #$00
+	sta FileFrameCur
+	sta CurFrame
+	sta MaxFrame
+	jsr CalcFramePointer
 
-	lda #0			; RAM bank to load file
-	ldx #0			; RAM bank of filename
-	jsr SETBANK
+	lda FramePtr
+	sta MEMCPY_SRC
+	lda FramePtr+1
+	sta MEMCPY_SRC+1
 
-	lda #0			; LOAD
-	ldx #<SPRITE_BASE
-	ldy #>SPRITE_BASE
-	jsr LOAD
+	; print READING ...
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #$00
+	jsr ClearLine
 
+	SetPointer LoadingTxt, STRING_PTR
+	ldy #$00
+	jsr PrintStringZ
+
+	; ... and append the frame counter 
+	SetPointer FrameTxt, STRING_PTR
+	jsr PrintStringZ
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR+1
+	sta STRING_PTR+1
+
+	lda #$ff
+	ldx #$ff
+	ldy #14
+	jsr PrintFrameCounter
+
+	SetPointer SpriteLoadProgress, FileProgressPtr
+
+	jsr LoadFile
+
+	SetPointer DoneTxt, STRING_PTR
+	ldy #$00
+	jsr PrintStringZ
+	jsr Delay
+	jsr ClearStatusLines
+	jsr ClearDirty
+
+	; When we reach EOF, we are already past the last
+	; byte of the last frame and the counter is already
+	; increased, so we have to decrease it here.
+	dec CurFrame
+	dec MaxFrame
+	jmp UpdateFrameEditor
+
+@Cancel:
+	; Print cancel text in status line
+	SetPointer CanceledTxt, STRING_PTR
+	jmp ShowStatusLine
+.endproc
+
+.proc SpriteLoadProgress
+
+	ldx FileFrameCur
+	inx
+	cpx #SPRITE_BUFFER_LEN-1
+	bne @Done
+
+	ldx #$00
+	lda MaxFrame
+	cmp #MAX_FRAMES
+	beq @MaxReached
+
+	lda CurFrame
+	ldx MaxFrame
+	ldy #14
+	jsr PrintFrameCounter
+
+	inc CurFrame
+	inc MaxFrame
+	ldx #$00
+
+@Done:
+	stx FileFrameCur
+	clc
+	rts
+
+@MaxReached:
+	sec
 	rts
 .endproc
 
@@ -2774,6 +2939,8 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "string/printstringz.s"
 .include "string/printhex.s"
 .include "string/string_to_bin16.s"
+
+.include "devices/readdiscstatus.s"
 
 ; **********************************************
 .segment "DATA"
@@ -2814,7 +2981,7 @@ LastKeyPressedLine: .byte $00
 ; Saving/Loading
 DiskDrive: .byte 8
 FilenameLen: .byte FilenameDefaultLen
-Filename: .byte "SPRITEDATA"
+Filename: .byte "spritedata"	; Filename is in PETSCII
 FilenameDefaultLen = *-Filename
 		.res 21-FilenameDefaultLen,0	; Excess placeholder for the filename
 
@@ -2822,8 +2989,6 @@ FileFrameStart: .byte 0		; first frame to save
 FileFrameEnd: .byte 0		; last frame to save
 FileFrameCur: .byte 0		; current frame to save
 
-FilePos: .byte 0			; Helper for saving current index when writing/loading a file
-FilePosBlock: .byte 0		; Blocksize of current save/load block
 FileProgressPtr: .word 0
 
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
@@ -2874,7 +3039,8 @@ DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
-ErrorFileIOTxt: .byte "FILE I/O ERROR",0
+ErrorFileIOTxt: .byte "FILE I/O ERROR"
+ErrorFileIOTxtLen = *-ErrorFileIOTxt
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
@@ -2953,6 +3119,5 @@ SymKeytableShift		= KeyTables + KeyTableLen
 SymKeytableCommodore 	= KeyTables + (KeyTableLen*2)
 SymKeytableControl		= KeyTables + (KeyTableLen*3)
 SymKeytableAlt 			= KeyTables + (KeyTableLen*4)
-DUMMY: .byte "endofprg",0
 MAIN_APPLICATION_END = *
 END:
