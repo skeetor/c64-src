@@ -8,8 +8,8 @@
 ; Required defines:
 ; 	KEYTABLE_PTR (ZP)
 
-.ifndef _READKEYS_INC
-_READKEYS_INC = 1
+.ifndef _TRANSLATEKEY_INC
+_TRANSLATEKEY_INC = 1
 
 .include "tools/misc.inc"
 
@@ -33,7 +33,7 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 		sta     Pointer+1
 .endmacro
 
-.proc ReadKey
+.proc TranslateKey
 	; The caller should have already called ScanKeys
 	;jsr ScanKeys
 
@@ -74,7 +74,7 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 ;
 ; NOTICE: If multiple modifier keys are pressed
 ; only the latest table will be set. The modifier
-; flags are still all availablke. The order of
+; flags are still all available. The order of
 ; evalution is:
 ; ALT, CTRL, C=, SHL, SHR
 ;
@@ -87,7 +87,7 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 ;
 .proc CheckModifier
 
-	lda #$00
+	lda #KEY_NONE
 	sta KeyModifier
 
 	LoadPointer KeytableNormal, KEYTABLE_PTR
@@ -263,17 +263,4 @@ KeytableCommodore:	.word $fb32
 KeytableControl:	.word $fb8b
 KeytableAlt:		.word $fbe4
 
-; KeytableASCII:
-;	.byte $14, $0D, $1D, $88, $85, $86, $87, $11 ; L 0
-;	.byte $33, $57, $41, $34, $5A, $53, $45, $01 ; L 1
-;	.byte $35, $52, $44, $36, $43, $46, $54, $58 ; L 2
-;	.byte $37, $59, $47, $38, $42, $48, $55, $56 ; L 3
-;	.byte $39, $49, $4A, $30, $4D, $4B, $4F, $4E ; L 4
-;	.byte $2B, $50, $4C, $2D, $2E, $3A, $40, $2C ; L 5
-;	.byte $5C, $2A, $3B, $13, $01, $3D, $5E, $2F ; L 6
-;	.byte $31, $5F, $04, $32, $20, $02, $51, $03 ; L 7
-;	.byte $84, $3a, $55, $09, $32, $34, $37, $31 ; L 8
-;	.byte $1B, $20, $20, $0A, $0D, $36, $39, $33 ; L 9
-;	.byte $08, $30, $2E, $91, $11, $9D, $10, $FF ; L10
-
-.endif ; _READKEYS_INC
+.endif ; _TRANSLATEKEY_INC

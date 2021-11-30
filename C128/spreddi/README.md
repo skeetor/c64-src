@@ -17,17 +17,17 @@ These keys work in all editor modes<br><br>
 
 <b>C</b> - Copy from frame N to current<br>
 <b>D</b> - Delete current frame<br>
-<b>*SHIFT D</b> - Delete frame N..M<br>
+<b>SHIFT D</b> - Delete frame N..M<br>
 <b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>G</b> - Goto frame<br>
 <b>*H</b> - Help screen<br>
 <b>L</b> - Load file<br>
 <b>N</b> - New empty frame at end<br>
-<b>SHIFT N</b> - Append current frame at end (Copy)<br>
-<b>*COMMODORE N/INS</b> - New empty frame at current position (Insert)<br>
-<b>*CONTROL N</b> - Insert copy of current frame at current position (Insert copy)<br>
-<b>S</b> - Save File<br>
+<b>COMMODORE N</b> - Append current frame at end (Copy)<br>
+<b>INS</b> - New empty frame at current position (Insert)<br>
+<b>SHIFT N</b> - Insert copy of current frame at current position (Insert copy)<br>
+<b>*S</b> - Save File (Ask for overwriting if file exists)<br>
 <b>M</b> - Multicolor<br>
 <b>U</b> - Undo changes by restoring the current frame<br>
 <b>X</b> - Toggle Width<br>
@@ -40,7 +40,13 @@ These keys work in all editor modes<br><br>
     Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.
 
 <b>CRSR Left/Right/Up/Down</b> - Move cursor in edit grid<br>
-<b>HOME</b> - Cursor to top first pixel
+<b>*COMMODORE CRSR Left/Right</b> - Shift grid left/right<br>
+<b>*COMMODORE CRSR Up/Down</b> - Shift grid up/down<br>
+<b>*COMMODORE A</b> - Shift grid left<br>
+<b>*COMMODORE D</b> - Shift grid right<br>
+<b>*COMMODORE W</b> - Shift grid up<br>
+<b>*COMMODORE S</b> - Shift grid down<br>
+<b>HOME</b> - Cursor to top first pixel<br>
 <b>DEL</b> - Clear grid<br>
 <b>1</b> - Cycle Spritecolor 1<br>
 <b>2</b> - Cycle Spritecolor 2 &lt;Multicolor&gt;<br>

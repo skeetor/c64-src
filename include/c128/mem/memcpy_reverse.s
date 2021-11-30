@@ -15,6 +15,13 @@ _MEMCOPY_REVERSE_INC = 1
 ;.segment "CODE"
 
 .proc MemCopyReverse
+
+	lda MEMCPY_LEN_LO
+	bne @Start
+	lda MEMCPY_LEN_HI
+	beq @Done
+
+@Start:
 	; Subtract the low byte from the target
 	; to get on a pageboundary
 	sec
@@ -38,9 +45,6 @@ _MEMCOPY_REVERSE_INC = 1
 	sta MEMCPY_LEN_LO
 	tya
 	bne @EnterLoop
-
-	lda MEMCPY_LEN_HI
-	beq @Done		; Len is 0
 
 @ReverseCopy:
 	ldy #$ff

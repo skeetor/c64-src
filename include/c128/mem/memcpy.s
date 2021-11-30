@@ -13,7 +13,7 @@
 ; 
 ; PARAM:
 ; A - Hibyte count
-; X - Lobyte count 
+; X - Lobyte count
 ; MEMCPY_SRC
 ; MEMCPY_TGT
 ;
@@ -30,22 +30,18 @@ _MEMCPY_INC = 1
 
 	; Check case 1+3. If target is below
 	; start then we know we can copy forward.
-	lda MEMCPY_SRC+1
-	cmp MEMCPY_TGT+1
-	bgt MemCopyForward
+	lda MEMCPY_TGT+1		; 20
+	cmp MEMCPY_SRC+1		; 20
+	beq @CheckLo
+	bcc MemCopyForward
 
-	lda MEMCPY_SRC
-	cmp MEMCPY_TGT
-	bgt MemCopyForward
+@CheckLo:
+	lda MEMCPY_TGT			; 80
+	cmp MEMCPY_SRC			; C0
+	beq @Done
+	bcc MemCopyForward
 
-	bne :+
-	lda MEMCPY_SRC+1
-	cmp MEMCPY_TGT+1
-	bne :+
-
-	rts				; Case 0. SRC and TRGT is equal.
-
-:
+@Backwards:
 	; Case 4.
 	; If target is higher than start but below
 	; the end, then the range overlaps and we
@@ -53,36 +49,24 @@ _MEMCPY_INC = 1
 	; calculate the endaddress to check this case.
 	clc
 	lda MEMCPY_SRC
-	adc MEMCPY_LEN_HI
-	sta MemMoveEnd
-	lda MEMCPY_SRC+1
 	adc MEMCPY_LEN_LO
-	sta MemMoveEnd+1
-
-	; Check case 2. Target is higher or equal
-	; than the end.
-	lda MEMCPY_TGT
-	cmp MemMoveEnd
-	bgt MemCopyForward
-
-	lda MEMCPY_TGT+1
-	cmp MemMoveEnd+1
-	bge MemCopyForward
-
-	; Copy backward.
-	lda MemMoveEnd
 	sta MEMCPY_SRC
-	lda MemMoveEnd+1
+	lda MEMCPY_SRC+1
+	adc MEMCPY_LEN_HI
 	sta MEMCPY_SRC+1
 
 	clc
 	lda MEMCPY_TGT
-	adc MEMCPY_LEN_HI
+	adc MEMCPY_LEN_LO
 	sta MEMCPY_TGT
 	lda MEMCPY_TGT+1
-	adc MEMCPY_LEN_LO
+	adc MEMCPY_LEN_HI
 	sta MEMCPY_TGT+1
+
 	jmp MemCopyReverse
+
+@Done:
+	rts
 .endproc
 
 .include "mem/memcpy_forward.s"

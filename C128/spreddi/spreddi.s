@@ -164,31 +164,21 @@ basicstub:
 @KeyLoop:
 	bit EditorWaitRelease
 	bmi @WaitKey
-	jsr WaitKeyboardRelease
+
+@WaitRelease:
+	; We want to wait until a key is released
+	; but we dont care if modifiers are still pressed
+	; like i.e. SHIFT. Otherwise handling certain keys
+	; is inconvenient like i.e. SHIFT-DEL (INS), because
+	; it would require the user to release also the shift
+	; key between multiple inserts.
+	jsr WaitKeyboardReleaseIgnoreMod
 
 @WaitKey:
-	jsr ScanKeys
-	dey					; returned 1 if a key was pressed
-	bne @WaitKey
-
 	jsr SaveKeys
 
-	ldy #$06			; Check the first 7 Matrixlines
-	ldx #$00
-
-@CheckRUNSTOP:
-	; Validate that *only* RUN/STOP was pressed without any other key.
-	lda LastKeyLine,x
-	cmp #$00
-	bne @ExecKey		; Any other key was pressed
-
-	inx
-	dey
-	bpl @CheckRUNSTOP
-
-	lda LastKeyLine,x
-	cmp #$80			; RUN/STOP
-	beq @Exit			; Only RUN/STOP was pressed so we can exit.
+	lda MainExitFlag
+	bne @Exit
 
 @ExecKey:
 	jsr KeyboardTrampolin
@@ -209,6 +199,7 @@ basicstub:
 
 	; Switch to default C128 config
 	lda #$00
+	sta MainExitFlag
 	sta MMU_CR_IO
 
 	sei
@@ -346,6 +337,12 @@ basicstub:
 	lda #$00
 	sta INP_NDX
 
+	rts
+.endproc
+
+.proc SetMainExit
+	lda #$01
+	sta MainExitFlag
 	rts
 .endproc
 
@@ -488,6 +485,7 @@ MMUConfig: .res $0b, 0
 ZPSafe: .res $10,0
 ScreenCol: .byte $00, $00
 RelocationFlag: .byte $00
+MainExitFlag: .byte 0
 
 ; Address of the entry stub. This is only the initialization
 ; part which will move the main application up to MAIN_APP_BASE
@@ -1339,8 +1337,8 @@ MAIN_APPLICATION = *
 
 	; Copy current sprite to preview
 	lda EditClearPreview
-	cmp #$00
-	beq @DoCopy
+	and #$01
+	beq @OnlyCopy
 
 	; Clear flag
 	jsr ClearPreviewSprite
@@ -1354,7 +1352,7 @@ MAIN_APPLICATION = *
 	sta (CURSOR_LINE),y
 	rts
 
-@DoCopy:
+@OnlyCopy:
 	lda CurFrame
 	ldy #SPRITE_PREVIEW_TGT
 	jsr CopySpriteFrame
@@ -1516,52 +1514,126 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc DeleteCurrentFrame
-	ldx MaxFrame
+	lda MaxFrame
 	beq @Cancel		; No more frames
 
-	; Either we are positioned on the last frame, in this
-	; case we don't need to copy anything and can just decrease
-	; CurFrame and MaxFrame.
-	; Example: User is positioned on 10/10
-	;          so frame 10 is deleted.
-	;          User is now on 9/9.
-	txa			; Remember last frame to copy, just in case
-				; we need it (10 from example)
-	dex
-	stx MaxFrame
+	lda CurFrame
+	tax
 
-	; If we deleted the last frame we are done
-	; as we don't need to copy anything
-	cmp CurFrame
-	beq @LastFrame
-
-	; We are currently on some frame which is not the last one,
-	; so we need to copy everything from the next frame until
-	; the end down to the current frame, which is the one to
-	; be deleted.
-	; Example: User is positioned on 5/10
-	;          Current frame stays at 5
-	;          6-10 is moved down to 5
-	;          User is on 5/9
-	ldx CurFrame		; 5 (from example)
-	inx					; Copy from 6
-	ldy CurFrame		; To 5
-
-	; X - First frame
 	; A - Last frame
-	; Y - Target frame
-	jsr CopyFrameBufferRange
-	jmp UpdateFrameEditor
-
-@LastFrame:
-	; We were on the last frame, so the current
-	; frame is also decreased.
-	stx CurFrame
-
-@Update:
+	; X - First frame
+	jsr DeleteFrameRange
 	jmp UpdateFrameEditor
 
 @Cancel:
+	jsr Flash
+	rts
+.endproc
+
+.proc DeleteRange
+	lda CurFrame
+	bne :+
+	cmp MaxFrame		; Only one frame?
+	beq @Cancel			; Nothing to delete
+:
+
+	jsr SaveDirty
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer DeleteTxt, STRING_PTR
+	ldy #$00
+	jsr PrintStringZ
+	iny
+	tya
+	clc
+	adc #6
+	sta FramenumberOffset
+
+	lda #1
+	sta FrameNumberStartLo
+	lda CurFrame
+	sta EnterNumberCurVal
+	lda MaxFrame
+	sta FrameNumberStartHi
+	sta FrameNumberEndHi
+	; Y - End of delete string
+	jsr EnterFrameNumbers
+	cmp #$00
+	beq @Done
+
+	ldx FrameNumberStart
+	lda FrameNumberEnd
+	jsr DeleteFrameRange
+	jsr UpdateFrameEditor
+
+@Done:
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #$00
+	jmp ClearLine
+
+@Cancel:
+	jsr Flash
+	jmp @Done
+
+.endproc
+
+; Delete a range of frames
+;
+; PARAMS:
+; A - Last frame
+; X - First frame
+.proc DeleteFrameRange
+	cmp MaxFrame
+	beq @LastFrame
+
+	; Example: Frames 1..10
+	; Delete 3..5 -> Copy 6..10 -> 3
+	stx FrameNumberStartLo
+	sta FrameNumberStartHi
+
+	; Set first frame as target (3)
+	txa
+	tay
+
+	; Lo is the frame after last (6)
+	ldx FrameNumberStartHi
+	inx
+
+	lda MaxFrame
+
+	; A - Last frame
+	; X - First frame
+	; Y - Target frame
+	jsr CopyFrameBufferRange
+
+	; Number of frames deleted
+	sec
+	lda FrameNumberStartHi
+	sbc FrameNumberStartLo
+	sta FrameNumberStartHi
+
+	; New maxframe - deleted frames
+	lda MaxFrame
+	clc
+	sbc FrameNumberStartHi
+	sta MaxFrame
+
+	lda MaxFrame
+	cmp CurFrame
+	bge @Done
+
+	sta CurFrame
+	rts
+
+@LastFrame:
+	cpx #$00
+	beq :+
+	dex
+:
+	stx MaxFrame
+	stx CurFrame
+
+@Done:
 	rts
 .endproc
 
@@ -1639,8 +1711,10 @@ MAIN_APPLICATION = *
 	sty MaxFrame
 	ldx CurFrame
 	jmp SwitchFrame
-
 @Stopped:
+.endproc
+
+.proc MaxFramesReached
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
 	SetPointer MaxFramesReachedTxt, STRING_PTR
 	
@@ -1654,6 +1728,48 @@ MAIN_APPLICATION = *
 	ldy #0
 	jmp ClearLine
 
+.endproc
+
+.proc InsertEmptyFrame
+	lda #$01
+.endproc
+
+; Insert a frame at the current position
+;
+; PARAMS:
+; A  - 1 Clear Current frame
+;      0 Keep copy of current frame
+.proc InsertFrame
+	ldy MaxFrame
+	cpy #MAX_FRAMES-1
+	beq @Stopped
+
+	pha
+	ldx CurFrame
+	jsr SaveDirty
+
+	inc MaxFrame
+
+	; X - First frame
+	; A - Last frame
+	; Y - Target frame
+	lda MaxFrame
+	ldx CurFrame
+	ldy CurFrame
+	iny
+	jsr CopyFrameBufferRange
+
+	pla
+	sta EditClearPreview
+	jmp UpdateFrameEditor
+
+@Stopped:
+	jmp MaxFramesReached
+.endproc
+
+.proc InsertCopyFrame
+	lda #$00
+	jmp InsertFrame
 .endproc
 
 ; Set the specified frame as the current editor frame
@@ -1824,7 +1940,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SaveKeys
-	ldy #C128_KEY_LINES+1
+	ldy #KEY_LINES
 
 @Loop:
 	lda KeyLine,y
@@ -2043,7 +2159,7 @@ MAIN_APPLICATION = *
 
 	; Calculate address of first frame where we want
 	; to save from
-	lda FileFrameStart
+	lda FrameNumberStart
 	jsr CalcFramePointer
 
 	lda FramePtr
@@ -2051,7 +2167,7 @@ MAIN_APPLICATION = *
 	lda FramePtr+1
 	sta MEMCPY_SRC+1
 
-	lda FileFrameEnd
+	lda FrameNumberEnd
 	jsr CalcFramePointer
 
 	; End of frame
@@ -2081,14 +2197,14 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	sta STRING_PTR+1
 
-	lda FileFrameStart
-	ldx FileFrameEnd
+	lda FrameNumberStart
+	ldx FrameNumberEnd
 	ldy #14
 	jsr PrintFrameCounter
 
 	lda #$00
-	sta FileFrameStart
-	sta FileFrameCur
+	sta FrameNumberStart
+	sta FrameNumberCur
 
 	SetPointer SpriteSaveProgress, FileProgressPtr
 	jsr SaveFile
@@ -2107,21 +2223,21 @@ MAIN_APPLICATION = *
 
 .proc SpriteSaveProgress
 
-	ldx FileFrameCur
+	ldx FrameNumberCur
 	inx
 	cpx #SPRITE_BUFFER_LEN-1
 	bne @Done
 
-	lda FileFrameStart
-	ldx FileFrameEnd
+	lda FrameNumberStart
+	ldx FrameNumberEnd
 	ldy #14
 	jsr PrintFrameCounter
 
-	inc FileFrameStart
+	inc FrameNumberStart
 	ldx #$00
 
 @Done:
-	stx FileFrameCur
+	stx FrameNumberCur
 	rts
 .endproc
 
@@ -2148,6 +2264,16 @@ MAIN_APPLICATION = *
 	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
+
+	lda #11
+	sta FramenumberOffset
+
+	lda #0
+	sta EnterNumberCurVal
+	sta FrameNumberStartLo
+	lda MaxFrame
+	sta FrameNumberStartHi
+	sta FrameNumberEndHi
 	jsr EnterFrameNumbers
 	cmp #$00
 	beq @Cancel
@@ -2174,13 +2300,20 @@ MAIN_APPLICATION = *
 ; Enter low and high frame numbers.
 ;
 ; PARAMS:
+; Y - Offset of frame string.
 ; CONSOLE_PTR - Screen location for input
+; FrameNumberStartLo	- lowest value for start
+; FrameNumberStartHi	- Highest value for start
+; FrameNumberEndHi		- Highest value for end range
+;                         lowest value is the start value entered
+; FramenumberOffset - First Input field
+; EnterNumberCurVal		- Current value of lowframe
 ;
 ; RETURN:
 ; A - 0 - Cancel
 ; Y - Offset of frame string.
-; FileFrameStart
-; FileFrameEnd
+; FrameNumberStart
+; FrameNumberEnd
 .proc EnterFrameNumbers
 	SetPointer FrameTxt, STRING_PTR
 	jsr PrintStringZ
@@ -2190,9 +2323,9 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR+1
 	sta STRING_PTR+1
 
-	lda CurFrame
-	ldx MaxFrame
-	ldy #11
+	lda FrameNumberStartLo
+	ldx FrameNumberEndHi
+	ldy FramenumberOffset
 	jsr PrintFrameCounter
 
 	SetPointer EnterNumberStr, STRING_PTR
@@ -2201,28 +2334,48 @@ MAIN_APPLICATION = *
 	sta EnterNumberStrLen
 
 	; Get low frame
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+11), CONSOLE_PTR
-	lda #1
-	tax
+	clc
+	lda CONSOLE_PTR
+	adc FramenumberOffset
+	sta CONSOLE_PTR
+	lda CONSOLE_PTR+1
+	adc #$00
+	sta CONSOLE_PTR+1
+
+	ldx #1
+	lda EnterNumberCurVal
+	clc
+	adc #1
 	ldy MaxFrame
 	iny					; User deals with 1..N
-	jsr EnterNumberReg
+	jsr EnterNumberValue
 	cpy #1
 	bne @Cancel
-	sta FileFrameStart
-	dec FileFrameStart	; Back to 0 based
+	sta FrameNumberStart
+	dec FrameNumberStart	; Back to 0 based
 
-	; Get high frame
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+15), CONSOLE_PTR
-	ldx MaxFrame	; User deals with 1..N
+	; Get high frame +4
+	clc
+	lda CONSOLE_PTR
+	adc #4
+	sta CONSOLE_PTR
+	lda CONSOLE_PTR+1
+	adc #$00
+	sta CONSOLE_PTR+1
+
+	; A - CurValue
+	; X - MinValue
+	; Y - MaxValue
+	ldx FrameNumberStart ; User deals with 1..N
 	inx
-	txa
-	tay
-	jsr EnterNumberReg
+	ldy FrameNumberEndHi
+	iny
+	tya
+	jsr EnterNumberValue
 	cpy #1
 	bne @Cancel
-	sta FileFrameEnd
-	dec FileFrameEnd	; Back to 0 based
+	sta FrameNumberEnd
+	dec FrameNumberEnd	; Back to 0 based
 
 	; Everything went ok
 	lda #$01
@@ -2272,7 +2425,7 @@ MAIN_APPLICATION = *
 	lda DiskDrive
 	ldx #8
 	ldy #12
-	jsr EnterNumberReg
+	jsr EnterNumberValue
 	cpy #1
 	bne @Cancel
 	sta DiskDrive
@@ -2362,7 +2515,7 @@ MAIN_APPLICATION = *
 	ldx #$01
 	ldy MaxFrame
 	iny
-	jsr EnterNumberReg
+	jsr EnterNumberValue
 	cpy #0
 	beq @Done
 
@@ -2388,7 +2541,7 @@ MAIN_APPLICATION = *
 ; X - Hibyte of value
 ; Y - 1 (OK) : 0 (CANCEL)
 ; If Y != 1 the value in A is undefined and should not be used.
-.proc EnterNumberReg
+.proc EnterNumberValue
 	sta EnterNumberCurVal
 	stx EnterNumberMinVal
 	sty EnterNumberMaxVal
@@ -2448,6 +2601,10 @@ MAIN_APPLICATION = *
 	beq @Cancel
 	cpy #$00			; Empty string was entered
 	beq @RangeError
+
+	; String length of input string
+	tya
+	tax
 
 	jsr StringToBin16
 	cpx #$00			; Value can not be higher than 255
@@ -2835,15 +2992,15 @@ MAIN_APPLICATION = *
 
 	; Reset to first frame
 	lda #$00
-	sta FileFrameCur
+	sta FrameNumberCur
 	sta CurFrame
 	sta MaxFrame
 	jsr CalcFramePointer
 
 	lda FramePtr
-	sta MEMCPY_SRC
+	sta MEMCPY_TGT
 	lda FramePtr+1
-	sta MEMCPY_SRC+1
+	sta MEMCPY_TGT+1
 
 	; print READING ...
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
@@ -2876,13 +3033,16 @@ MAIN_APPLICATION = *
 	ldy #$00
 	jsr PrintStringZ
 	jsr Delay
+	lda #$00
+	sta EditClearPreview
 	jsr ClearStatusLines
 	jsr ClearDirty
 
 	; When we reach EOF, we are already past the last
 	; byte of the last frame and the counter is already
 	; increased, so we have to decrease it here.
-	dec CurFrame
+	lda #$00
+	sta CurFrame
 	dec MaxFrame
 	jmp UpdateFrameEditor
 
@@ -2894,7 +3054,7 @@ MAIN_APPLICATION = *
 
 .proc SpriteLoadProgress
 
-	ldx FileFrameCur
+	ldx FrameNumberCur
 	inx
 	cpx #SPRITE_BUFFER_LEN-1
 	bne @Done
@@ -2914,7 +3074,7 @@ MAIN_APPLICATION = *
 	ldx #$00
 
 @Done:
-	stx FileFrameCur
+	stx FrameNumberCur
 	clc
 	rts
 
@@ -2927,6 +3087,7 @@ MAIN_APPLICATION = *
 SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/keyboard_pressed.s"
 .include "kbd/keyboard_released.s"
+.include "kbd/keyboard_released_modignore.s"
 .include "kbd/input.s"
 .include "kbd/number_input_filter.s"
 
@@ -2985,9 +3146,15 @@ Filename: .byte "spritedata"	; Filename is in PETSCII
 FilenameDefaultLen = *-Filename
 		.res 21-FilenameDefaultLen,0	; Excess placeholder for the filename
 
-FileFrameStart: .byte 0		; first frame to save
-FileFrameEnd: .byte 0		; last frame to save
-FileFrameCur: .byte 0		; current frame to save
+FrameNumberStart: .byte 0		; first frame input
+FrameNumberEnd: .byte 0			; last frame input
+FrameNumberCur: .byte 0			; current frame
+FramenumberOffset: .byte 0
+
+; Range values for Frame number input
+FrameNumberStartLo: .byte 0
+FrameNumberStartHi: .byte 0
+FrameNumberEndHi: .byte 0
 
 FileProgressPtr: .word 0
 
@@ -3033,6 +3200,7 @@ SaveTxt:		.byte "SAVE ",0
 OpenFileTxt:	.byte "OPEN FILE: ",0
 WritingTxt:		.byte "WRITING ",0
 LoadingTxt:		.byte "READING ",0
+DeleteTxt:		.byte "DELETE",0
 DoneTxt:		.byte "DONE                                    ",0
 EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
@@ -3092,13 +3260,17 @@ SpriteEditorKeyMap:
 	DefineKey 0, '2', NO_REPEAT_KEY, IncSpriteColor2				; 2
 	DefineKey 0, '3', NO_REPEAT_KEY, IncSpriteColor3				; 3
 	DefineKey 0, $55, NO_REPEAT_KEY, UndoFrame						; U
+	DefineKey 0, $03, NO_REPEAT_KEY, SetMainExit					; RUN/STOP
 
 	; SHIFT keys
 	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; CRSR-Left
 	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; CRSR-Up
-	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, AppendFrameCopy		; SHIFT-N
-	DefineKey KEY_SHIFT, $3e, REPEAT_KEY,    NextFrame				; SHIFT-.
-	DefineKey KEY_SHIFT, $3c, REPEAT_KEY,    PreviousFrame			; SHIFT-,
+	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, InsertCopyFrame		; SHIFT-N
+	DefineKey KEY_SHIFT, $94, NO_REPEAT_KEY, InsertEmptyFrame		; INS (SHIFT-DEL)
+	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteRange			; SHIFT-D
+
+	; COMMODORE keys
+	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; COMMODORE-N
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, REPEAT_KEY,      MoveCursorRight		; CRSR-Right/Keypad
@@ -3111,6 +3283,8 @@ SpriteEditorKeyMap:
 
 	; End of map
 	DefineKey 0,0,0,0
+
+MaxFrameValue: .word MAX_FRAMES
 
 KeyTableLen = KEY_LINES*8
 KeyTables = *

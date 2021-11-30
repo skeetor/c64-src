@@ -16,6 +16,9 @@ _MEMCOPY_FORWARD_INC = 1
 
 .proc MemCopyForward
 
+	cpy MEMCPY_LEN_LO
+	beq @EnterForward
+
 	ldy #$00
 
 @SmallLoop:
@@ -25,22 +28,32 @@ _MEMCOPY_FORWARD_INC = 1
 	cpy MEMCPY_LEN_LO
 	bne @SmallLoop
 
+@EnterForward:
+	lda MEMCPY_LEN_HI
+	beq @Done
+
 	; Adjust to page boundary
 	clc
 	lda MEMCPY_SRC
 	adc MEMCPY_LEN_LO
 	sta MEMCPY_SRC
+	lda MEMCPY_SRC+1
+	adc #$00
+	sta MEMCPY_SRC+1
+
+	; We already copied the first bytes
+	; up until the page boundary, so
+	; if the hi value is 0, we are done
+	; and we can exit early.
 	lda MEMCPY_LEN_HI
 	beq @Done
-	adc MEMCPY_SRC+1
-	sta MEMCPY_SRC+1
 
 	clc
 	lda MEMCPY_TGT
 	adc MEMCPY_LEN_LO
 	sta MEMCPY_TGT
-	lda MEMCPY_SRC+1
-	adc MEMCPY_LEN_HI
+	lda MEMCPY_TGT+1
+	adc #$00
 	sta MEMCPY_TGT+1
 
 @CopyPages:
@@ -53,10 +66,9 @@ _MEMCOPY_FORWARD_INC = 1
 	iny
 	bne @PageLoop
 
-	lda MEMCPY_LEN_HI
+	dec MEMCPY_LEN_HI
 	beq @Done
 
-	dec MEMCPY_LEN_HI
 	inc MEMCPY_SRC+1
 	inc MEMCPY_TGT+1
 	jmp @CopyPages

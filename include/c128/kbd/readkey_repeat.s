@@ -35,7 +35,7 @@ _READKEY_REPEAT_INC = 1
 
 @KeyPressed:
 	; Convert scancodes to PETSCII
-	jsr ReadKey
+	jsr TranslateKey
 
 	; Check if a real key was pressed.
 	; If it was only a modifier we ignore it.
@@ -81,7 +81,7 @@ _READKEY_REPEAT_INC = 1
 	rts
 .endproc
 
-.include "kbd/readkey.s"
+.include "kbd/translate_key.s"
 .include "kbd/keyboard_pressed.s"
 
 ;.segment "DATA"

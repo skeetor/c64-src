@@ -28,6 +28,10 @@ _SCANKEYS_INC = 1
 ; remainder of the code works the same.
 ;
 ; If any keys are pressed Y contains #$01
+;
+; RETURN:
+; Y - 1 Keys are pressed
+;     0 No keys pressed
 .proc ScanKeys
 
 	lda #$00
@@ -97,7 +101,7 @@ _SCANKEYS_INC = 1
 
 ; Keyboard handling
 KeyTmp: .byte 0
-KeyLine: .res KEY_LINES,$ff
+KeyLine: .res KEY_LINES,$00
 KeyPressed : .byte 0
 
 .endif ; _SCANKEYS_INC
