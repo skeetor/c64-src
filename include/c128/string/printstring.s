@@ -22,6 +22,10 @@ _PRINTSTRING_INC = 1
 
 .proc PrintString
 
+	cpx #$00
+	bne :+
+	rts
+:
 	sty STR_POS
 	ldy #$00
 

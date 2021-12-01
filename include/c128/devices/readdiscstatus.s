@@ -3,24 +3,34 @@
 ; Written by Gerhard W. Gruber in 11.09.2021
 ; Based on https://codebase64.org/doku.php?id=base:reading_the_error_channel_of_a_disk_drive
 ;
+; IMPORTANT NOTE! After calling the Open function, all open 
+; files are no longer accessible.
+;
 ; PARAMS:
 ; X - Device number
 ; STRING_PTR
 ;
 ; RETURN:
+; C - Carry set on error.
+; If a device not present occurs then DiscStatusCode is $ff.
+; In this case, all other fields are undefined.
 ; A - $00 - OK. Status was successfully retrieve read.
 ;     $ff - FAILED. Status couldn't be read and is unknown 
+;
+; Written by Gerhard W. Gruber 02.12.2021 
 ;
 .ifndef _READDISCSTATUS_INC
 _READDISCSTATUS_INC = 1
 
 ;.segment "CODE"
 
-.proc ReadDiscStatus
+.proc OpenDiscStatus
 	lda #$00
 	sta STATUS
 
-	lda #15				; Fileno
+	stx DiscStatusDrive
+
+	txa					; Fileno
 	ldy #15				; Control channel of disc
 	jsr SETFPAR
 
@@ -28,50 +38,70 @@ _READDISCSTATUS_INC = 1
 	ldx #0				; RAM bank of filename
 	jsr SETBANK
 
-	jsr CLRCH
-
-	lda #$00      ; no filename
+	lda #$00			; no filename
 	tax
 	tay
 	jsr SETNAME
 
-	ldx #$ff
-	stx DiscStatusCode
-	stx DiscStatusStringLen
-
 	jsr OPEN
-	bcs @Fail
+	bcs @Error
+	lda STATUS
+	bne @Error
 
-	ldx #15
+	clc
+	rts
+
+@Error:
+	sec
+	rts
+.endproc
+
+.proc ReadDiscStatus
+	stx DiscStatusDrive	; FileNo
+
+	lda #$ff
+	sta DiscStatusCode
+	sta DiscStatusTrack
+	sta DiscStatusSector
+	lda #$00
+	sta DiscStatusStringLen
+
 	jsr CHKIN
+	bcs @Error
 
 @ReadLoop:
 	jsr READST
-	bne @Done		; EOF
+	bne @Done			; EOF
 	jsr BSIN
-	inc DiscStatusStringLen
-	ldy DiscStatusStringLen
 	jsr PETSCIIToScreen
+	bcs @Done
+	ldy DiscStatusStringLen
 	sta DiscStatusString,y
-	jmp @ReadLoop
+	inc DiscStatusStringLen
+	cpy #DISC_STATUS_MAX_LEN
+	bne @ReadLoop
 
 @Done:
+	lda DiscStatusStringLen
+	beq :+				; EOF
+	dec DiscStatusStringLen
 	jsr ParseDiscStatusValues
-	lda #$00
+:
+	clc
+	rts
 
-@Close:
-	pha
+@Error:
+	sec
+	rts
+.endproc
 
-	lda #15
+.proc CloseDiscStatus
+	txa					; FileNo
 	jsr CLOSE
 	jsr CLRCH
 
-	pla
+	clc
 	rts
-
-@Fail:
-	lda #$ff
-	jmp @Close
 
 .endproc
 
@@ -137,9 +167,11 @@ _READDISCSTATUS_INC = 1
 ;.segment "DATA"
 
 DiscStatusCode: .byte 0
+DiscStatusDrive: .byte 0
 DiscStatusTrack: .byte 0
 DiscStatusSector: .byte 0
 DiscStatusStringLen: .byte 0
 DiscStatusString: .res 40
+DISC_STATUS_MAX_LEN = (*-DiscStatusString)
 
 .endif ; _READDISCSTATUS_INC

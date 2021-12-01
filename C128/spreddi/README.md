@@ -27,7 +27,7 @@ These keys work in all editor modes<br><br>
 <b>COMMODORE N</b> - Append current frame at end (Copy)<br>
 <b>INS</b> - New empty frame at current position (Insert)<br>
 <b>SHIFT N</b> - Insert copy of current frame at current position (Insert copy)<br>
-<b>*S</b> - Save File (Ask for overwriting if file exists)<br>
+<b>S</b> - Save File (Ask for overwriting if file exists needs to be done)<br>
 <b>M</b> - Multicolor<br>
 <b>U</b> - Undo changes by restoring the current frame<br>
 <b>X</b> - Toggle Width<br>

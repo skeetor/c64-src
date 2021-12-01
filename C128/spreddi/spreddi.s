@@ -35,7 +35,6 @@ COLOR_TXT_ROW = 12
 COLOR_TXT_COLUMN = 27
 ; Position of the character that shows the selected color 
 
-
 ; Sprite editor constants
 ; =======================
 SCREEN_VIC			= $0400
@@ -153,6 +152,16 @@ basicstub:
 	SetPointer (SPRITE_USER_START), MEMCPY_TGT
 	ldy #SPRITE_BUFFER_LEN
 	jsr memcpy255
+
+	ldy #FilenameDefaultTxtLen
+	sty FilenameLen
+	dey
+
+@CopyDefaultFilename:
+	lda FilenameDefaultTxt,y
+	sta Filename,y
+	dey
+	bpl @CopyDefaultFilename
 
 	; Clear the buffer on frame update
 	lda #$01
@@ -284,7 +293,7 @@ basicstub:
 	SetPointer (EditorKeyboardHandler), EditorKeyHandler
 
 	lda #8
-	sta DiskDrive
+	sta DeviceNumber
 
 	rts
 
@@ -1335,6 +1344,10 @@ MAIN_APPLICATION = *
 ; and update the editing matrix.
 .proc UpdateFrameEditor
 
+	lda EditClearPreview
+	and #$02
+	bne @SkipCopy
+
 	; Copy current sprite to preview
 	lda EditClearPreview
 	and #$01
@@ -1357,6 +1370,7 @@ MAIN_APPLICATION = *
 	ldy #SPRITE_PREVIEW_TGT
 	jsr CopySpriteFrame
 
+@SkipCopy:
 	jsr DrawBitMatrix
 	;jsr MoveCursorHome
 	ldy EditCursorX
@@ -2206,13 +2220,15 @@ MAIN_APPLICATION = *
 	sta FrameNumberStart
 	sta FrameNumberCur
 
-	SetPointer SpriteSaveProgress, FileProgressPtr
+	SetPointer SpriteSaveProgress, WriteFileProgressPtr
 	jsr SaveFile
+	bcs :+				; Error was already shown
 
 	SetPointer DoneTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
 	jsr Delay
+:
 	jmp ClearStatusLines
 
 @Cancel:
@@ -2238,6 +2254,7 @@ MAIN_APPLICATION = *
 
 @Done:
 	stx FrameNumberCur
+	clc
 	rts
 .endproc
 
@@ -2422,13 +2439,13 @@ MAIN_APPLICATION = *
 	lda #$02
 	sta EnterNumberStrLen
 
-	lda DiskDrive
+	lda DeviceNumber
 	ldx #8
 	ldy #12
 	jsr EnterNumberValue
 	cpy #1
 	bne @Cancel
-	sta DiskDrive
+	sta DeviceNumber
 
 	; Success
 	lda #$01
@@ -2688,38 +2705,45 @@ MAIN_APPLICATION = *
 ; FilenameLen - Length of the filename
 ; MEMCPY_SRC	- Startadress
 ; MEMCPY_TGT	- Endadress
-; FileProgressPtr
+; WriteFileProgressPtr
 ;
 ; RETURN:
 ; STATUS - Errorstatus from OS
 ;
 .proc SaveFile
+	ldx DeviceNumber
+	jsr OpenDiscStatus
+	bcs @Error
+
 	lda #$00
 	sta STATUS
 
 	lda #'w'			; Write mode
 	ldy #2				; Fileno
-	ldx DiskDrive		; Device
+	ldx DeviceNumber	; Device
 	jsr OpenFile
-	lda STATUS
-	bne @Error
+	bcs @Error
 
 	ldx #2
 	jsr WriteFile
-	lda STATUS
-	beq :+
+	bcs @Error
+
+@Close:
+	lda #2
+	jsr CloseFile
+
+	ldx DeviceNumber
+	jsr CloseDiscStatus
+
+	clc
+	rts
 
 @Error:
 	jsr FileError
-:
-	lda #2
-	jsr CloseFile
-	lda STATUS
-	beq @Done
-
-	jmp FileError
-@Done:
+	jsr @Close
+	sec
 	rts
+
 .endproc
 
 ; Write a memoryblock into a sequential
@@ -2730,243 +2754,79 @@ MAIN_APPLICATION = *
 ; FilenameLen - Length of the filename
 ; MEMCPY_SRC	- Startadress
 ; MEMCPY_TGT	- Endadress
-; FileProgressPtr
+; ReadFileProgressPtr
 ;
 ; RETURN:
 ; STATUS - Errorstatus from OS
 ;
 .proc LoadFile
+
+	ldx DeviceNumber
+	jsr OpenDiscStatus
+	bcs @Error
+
+	lda #$00
+	sta STATUS
+
 	lda #'r'			; Write mode
 	ldy #2				; Fileno
-	ldx DiskDrive		; Device
+	ldx DeviceNumber	; Device
 	jsr OpenFile
 	bcs @Error
 
 	ldx #2
 	jsr ReadFile
-	bcc :+
+	bcs @Error
+
+@Close:
+	lda #2
+	jsr CloseFile
+
+	ldx DeviceNumber
+	jsr CloseDiscStatus
+
+	clc
+	rts
 
 @Error:
 	jsr FileError
-:
-	lda #2
-	jmp CloseFile
-.endproc
-
-; Open a sequential file for reading or writing.
-; Filename must be already present.
-;
-; PARAM:
-; A - 'r' for read or 'w' for write
-; X - Devicenumber
-; Y - Filenumber
-; Filename - Filename in PETSCII
-; FilenameLen - Length of the filename
-;
-; RETURN:
-; STATUS - Errorstatus from OS
-;
-.proc OpenFile	; Prepare filename by appending 
-
-	pha
-
-	; File set parameters
-	tya					; Fileno
-	ldx DiskDrive		; Device
-	ldy #5				; secondary address
-	jsr SETFPAR
-
-	lda #0				; RAM bank to load file
-	ldx #0				; RAM bank of filename
-	jsr SETBANK
-
-	; ',P,W' to open a file for writing
-	ldy FilenameLen
-	lda #','
-	sta Filename,y
-	iny
-	lda #'p'
-	sta Filename,y
-	iny
-	lda #','
-	sta Filename,y
-	iny
-	pla
-	sta Filename,y
-
-	jsr CLRCH
-
-	lda FilenameLen
-	clc
-	adc #4
-	ldx #<(Filename)
-	ldy #>(Filename)
-	jsr SETNAME
-
-	; Open the file
-	jmp OPEN
-.endproc
-
-; Close the file which was previously opened
-;
-; PARAM:
-; A - FileNo
-;
-.proc CloseFile
-
-	jsr CLOSE
-
-	; Clear output and reset to STDIN
-	; before closing
-	;SetPointer CLRCH, FARCALL_PTR
-	;jsr FARCALL
-	jmp CLRCH
-.endproc
-
-; Write a memoryblock to an already opened file
-;
-; PARAM:
-; X - Fileno
-; MEMCPY_SRC	- Startadress
-; MEMCPY_TGT	- Endadress
-; FileProgressPtr
-;
-; RETURN:
-; STATUS - Errorstatus from OS
-;
-.proc WriteFile
-
-	; Switch output to our file
-	ldx #2
-	jsr CKOUT
-	lda STATUS
-	beq :+
-	jmp FileError
-:
-	; Write a single character to disk
-@WriteByte:
-	ldy #$00
-	lda (MEMCPY_SRC),y
-	jsr BSOUT		; Write byte in A
-	lda STATUS
-	beq :+
-
-	; Write error
-	jmp FileError
-:
-	clc
-	lda MEMCPY_SRC
-	adc #1
-	sta MEMCPY_SRC
-	lda MEMCPY_SRC+1
-	adc #$00
-	sta MEMCPY_SRC+1
-
-	jsr ShowFileProgress
-
-	lda MEMCPY_SRC+1
-	cmp MEMCPY_TGT+1
-	bne @WriteByte
-	lda MEMCPY_SRC
-	cmp MEMCPY_TGT
-	bne @WriteByte
-
-@Done:
-	clc
+	jsr @Close
+	sec
 	rts
 .endproc
 
-; Read an already opened file
-;
-; PARAM:
-; X - Fileno
-; MEMCPY_TGT	- Startadress
-; FileProgressPtr - I it returns with carry
-;     set, the load operation is finished even
-;     if the file was not fully read. No error
-;     is reported in this case.
-;
-; RETURN:
-; STATUS - Errorstatus from OS
-;
-.proc ReadFile
-
-	; Switch output to our file
-	ldx #2
-	jsr CHKIN
-	lda STATUS
-	beq :+
-	jmp FileError
-:
-	; Read a single character
-@ReadByte:
-	lda #$00
-	sta STATUS
-	jsr BSIN
-	ldy #$00
-	sta (MEMCPY_TGT),y
-
-	lda STATUS
-	and #%01000000		; EOF
-	bne @Done
-	lda STATUS
-	beq :+
-	jmp FileError
-:
-	jsr ShowFileProgress
-	bcs @Done
-
-	clc
-	lda MEMCPY_TGT
-	adc #1
-	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
-	adc #$00
-	sta MEMCPY_TGT+1
-	jmp @ReadByte
-
-@Done:
-	clc
-	rts
-
-.endproc
-
-.proc ShowFileProgress
-	jmp (FileProgressPtr)
-.endproc
-
+; Print an appropriate errormessage
 .proc FileError
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 
-	bit STATUS
-	bpl @UnknownError
+	; Check if DiscStatus was already called
+	ldx DiscStatusCode
+	cpx #$ff
+	bne @DiscError
 
-	; Device not present error
+	ldx DeviceNumber
+	jsr ReadDiscStatus
+	ldx DiscStatusCode
+	cpx #$ff
+	bne @DiscError
+
+@DeviceNotPresent:
 	SetPointer ErrorDeviceNotPresentTxt, STRING_PTR
-	ldy #SCREEN_COLUMNS
-	jsr PrintStringZ
+	ldx #ErrorDeviceNotPresentTxtLen
 	jmp @Done
 
-@UnknownError:
-	ldx DiskDrive
-	jsr ReadDiscStatus
-	bne @IOError
-
+@DiscError:
 	SetPointer DiscStatusString, STRING_PTR
 	ldx DiscStatusStringLen
-	beq @IOError
-	jmp @PrintMessage
+	bne @Done
 
 @IOError:
-	; Some unspecified error (most likely read or write error)
 	SetPointer ErrorFileIOTxt, STRING_PTR
-	ldx #ErrorFileIOTxtLen 
-
-@PrintMessage:
-	ldy #SCREEN_COLUMNS
-	jsr PrintString
+	ldx #ErrorFileIOTxtLen
 
 @Done:
+	ldy #SCREEN_COLUMNS
+	jsr PrintString
 	jsr Flash
 	jsr WaitKeyboardPressed
 	jsr WaitKeyboardRelease
@@ -3025,17 +2885,30 @@ MAIN_APPLICATION = *
 	ldy #14
 	jsr PrintFrameCounter
 
-	SetPointer SpriteLoadProgress, FileProgressPtr
-
+	SetPointer SpriteLoadProgress, ReadFileProgressPtr
 	jsr LoadFile
+	bcc @Success
 
+	ldx #$00
+	stx CurFrame
+	inx					; Will be decreased on exit
+	stx MaxFrame
+	jsr ClearPreviewSpriteKey
+	ldx #$00
+	ldy #SPRITE_PREVIEW_SRC
+	jsr CopySpriteFrame
+
+	lda #$02
+	bne @Failed
+
+@Success:
 	SetPointer DoneTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
-	jsr Delay
 	lda #$00
+
+@Failed:
 	sta EditClearPreview
-	jsr ClearStatusLines
 	jsr ClearDirty
 
 	; When we reach EOF, we are already past the last
@@ -3044,7 +2917,10 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta CurFrame
 	dec MaxFrame
-	jmp UpdateFrameEditor
+	jsr MoveCursorHome
+	jsr UpdateFrameEditor
+	jsr Delay				; Show the DONE text
+	jmp ClearStatusLines
 
 @Cancel:
 	; Print cancel text in status line
@@ -3102,7 +2978,9 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "string/string_to_bin16.s"
 
 .include "devices/readdiscstatus.s"
-
+.include "devices/openfile.s"
+.include "devices/readfile.s"
+.include "devices/writefile.s"
 ; **********************************************
 .segment "DATA"
 
@@ -3140,11 +3018,8 @@ LastKeyPressed: .byte $ff
 LastKeyPressedLine: .byte $00
 
 ; Saving/Loading
-DiskDrive: .byte 8
-FilenameLen: .byte FilenameDefaultLen
-Filename: .byte "spritedata"	; Filename is in PETSCII
-FilenameDefaultLen = *-Filename
-		.res 21-FilenameDefaultLen,0	; Excess placeholder for the filename
+FilenameDefaultTxt: .byte "spritedata"	; Filename is in PETSCII
+FilenameDefaultTxtLen = *-FilenameDefaultTxt
 
 FrameNumberStart: .byte 0		; first frame input
 FrameNumberEnd: .byte 0			; last frame input
@@ -3155,8 +3030,6 @@ FramenumberOffset: .byte 0
 FrameNumberStartLo: .byte 0
 FrameNumberStartHi: .byte 0
 FrameNumberEndHi: .byte 0
-
-FileProgressPtr: .word 0
 
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberMsgLen = *-EnterNumberMsg
@@ -3207,8 +3080,9 @@ DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
-ErrorFileIOTxt: .byte "FILE I/O ERROR"
-ErrorFileIOTxtLen = *-ErrorFileIOTxt
+ErrorDeviceNotPresentTxtLen = (*-ErrorDeviceNotPresentTxt)-1
+ErrorFileIOTxt: .byte "FILE I/O ERROR",0
+ErrorFileIOTxtLen = (*-ErrorFileIOTxt)-1
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
