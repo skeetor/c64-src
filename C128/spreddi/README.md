@@ -41,11 +41,11 @@ These keys work in all editor modes<br><br>
 
 <b>CRSR Left/Right/Up/Down</b> - Move cursor in edit grid<br>
 <b>*COMMODORE CRSR Left/Right</b> - Shift grid left/right<br>
-<b>*COMMODORE CRSR Up/Down</b> - Shift grid up/down<br>
+<b>COMMODORE CRSR Up/Down</b> - Shift grid up/down<br>
 <b>*COMMODORE A</b> - Shift grid left<br>
 <b>*COMMODORE D</b> - Shift grid right<br>
-<b>*COMMODORE W</b> - Shift grid up<br>
-<b>*COMMODORE S</b> - Shift grid down<br>
+<b>COMMODORE W</b> - Shift grid up<br>
+<b>COMMODORE S</b> - Shift grid down<br>
 <b>HOME</b> - Cursor to top first pixel<br>
 <b>DEL</b> - Clear grid<br>
 <b>1</b> - Cycle Spritecolor 1<br>
