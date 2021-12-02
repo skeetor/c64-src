@@ -170,6 +170,11 @@ basicstub:
 	; Now switch to sprite editor as default
 	jsr SpriteEditor
 
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer VersionTxt, STRING_PTR
+	ldy #4
+	jsr PrintStringZ
+
 @KeyLoop:
 	bit EditorWaitRelease
 	bmi @WaitKey
@@ -575,9 +580,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc KeyboardTrampolin
-
 	jmp (EditorKeyHandler)
-
 .endproc
 
 .proc EditorKeyboardHandler
@@ -971,6 +974,130 @@ MAIN_APPLICATION = *
 
 @Done:
 	rts
+.endproc
+
+.proc ShiftGridUp
+	jsr SetDirty
+
+	ldy EditColumnBytes
+	ldx EditLines
+	stx Multiplicand
+	sty Multiplier
+
+	lda #$00
+	sta Multiplicand+1
+	sta Multiplier+1
+	jsr Mult16x16
+
+	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_TGT
+
+	; When moving up, we copy from the next line to the previous
+	clc
+	lda #<SPRITE_PREVIEW_BUFFER
+	adc EditColumnBytes
+	sta MEMCPY_SRC
+	lda #>SPRITE_PREVIEW_BUFFER
+	adc #$00
+	sta MEMCPY_SRC+1
+
+	ldy EditColumnBytes
+	dey
+
+	; Save the previous line
+@SaveTopLine:
+	lda (MEMCPY_TGT),y
+	sta TMP_VAL_0,y
+	dey
+	bpl @SaveTopLine
+
+	ldy #$00
+
+@CopyLoop:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	iny
+	cpy Product
+	bne @CopyLoop
+
+	; Also copy the last byte
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+
+	ldx EditColumnBytes
+	dex
+	dey
+
+	; Restore the previous line
+@RestoreBottomLine:
+	lda TMP_VAL_0,x
+	sta (MEMCPY_TGT),y
+	dey
+	dex
+	bpl @RestoreBottomLine
+
+	lda #$02
+	sta EditClearPreview
+	jmp UpdateFrameEditor
+.endproc
+
+.proc ShiftGridDown
+	jsr SetDirty
+
+	ldy EditColumnBytes
+	ldx EditLines
+	stx Multiplicand
+	sty Multiplier
+
+	lda #$00
+	sta Multiplicand+1
+	sta Multiplier+1
+	jsr Mult16x16
+
+	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_SRC
+
+	; When moving down, we copy from the prev line to the next
+	clc
+	lda #<SPRITE_PREVIEW_BUFFER
+	adc EditColumnBytes
+	sta MEMCPY_TGT
+	lda #>SPRITE_PREVIEW_BUFFER
+	adc #$00
+	sta MEMCPY_TGT+1
+
+	ldy Product
+	ldx EditColumnBytes
+	dex
+	dey
+
+	; Restore the previous line
+@SaveBottomLine:
+	lda (MEMCPY_SRC),y
+	sta TMP_VAL_0,x
+	dey
+	dex
+	bpl @SaveBottomLine
+
+	ldy Product
+	dey
+
+@CopyLoop:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @CopyLoop
+
+	ldy EditColumnBytes
+	dey
+
+@RestoreTopLine:
+	lda TMP_VAL_0,y
+	sta (MEMCPY_SRC),y
+	dey
+	bpl @RestoreTopLine
+
+	lda #$02
+	sta EditClearPreview
+	jmp UpdateFrameEditor
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -2984,6 +3111,9 @@ SCANKEYS_BLOCK_IRQ = 1
 ; **********************************************
 .segment "DATA"
 
+;                            1         2         3         4
+;                  0123456789012345678901234567890123456789
+VersionTxt: .byte "SPREDDI V0.80 BY GERHARD GRUBER",0
 TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0
 TMP_VAL_2: .word 0
@@ -3078,6 +3208,7 @@ DoneTxt:		.byte "DONE                                    ",0
 EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
+ExportBasicTxt: .byte "LNR: 1000 STEP:  10 COMPRESSED/PRETTY:P",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
 ErrorDeviceNotPresentTxtLen = (*-ErrorDeviceNotPresentTxt)-1
@@ -3145,6 +3276,8 @@ SpriteEditorKeyMap:
 
 	; COMMODORE keys
 	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; COMMODORE-N
+	DefineKey KEY_COMMODORE, $b3, REPEAT_KEY, ShiftGridUp			; COMMODORE-W
+	DefineKey KEY_COMMODORE, $ae, REPEAT_KEY, ShiftGridDown			; COMMODORE-S
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, REPEAT_KEY,      MoveCursorRight		; CRSR-Right/Keypad
@@ -3154,6 +3287,9 @@ SpriteEditorKeyMap:
 
 	DefineKey KEY_EXT|KEY_SHIFT, $1d, REPEAT_KEY, NextFrame			; CRSR-Right/Keypad
 	DefineKey KEY_EXT|KEY_SHIFT, $9d, REPEAT_KEY, PreviousFrame		; CRSR-Left/Keypad
+
+	DefineKey KEY_EXT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; COMMODORE-CRSR-Up
+	DefineKey KEY_EXT|KEY_COMMODORE, $11, REPEAT_KEY, ShiftGridDown	; COMMODORE-CRSR-Down
 
 	; End of map
 	DefineKey 0,0,0,0
