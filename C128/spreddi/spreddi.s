@@ -172,7 +172,7 @@ basicstub:
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	SetPointer VersionTxt, STRING_PTR
-	ldy #4
+	ldy #2
 	jsr PrintStringZ
 
 @KeyLoop:
@@ -524,8 +524,10 @@ MAIN_APPLICATION = *
 	sta EditColumns
 	lda #21
 	sta EditLines
-	lda #SPRITE_BUFFER_LEN
-	sta EditFrameSize
+	ldx #SPRITE_BUFFER_LEN
+	stx EditFrameSize
+	dex
+	stx EditBufferLen
 
 	lda #(1 << SPRITE_PREVIEW)
 	sta VIC_SPR_ENA		; Enable preview sprite
@@ -979,16 +981,6 @@ MAIN_APPLICATION = *
 .proc ShiftGridUp
 	jsr SetDirty
 
-	ldy EditColumnBytes
-	ldx EditLines
-	stx Multiplicand
-	sty Multiplier
-
-	lda #$00
-	sta Multiplicand+1
-	sta Multiplier+1
-	jsr Mult16x16
-
 	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_TGT
 
 	; When moving up, we copy from the next line to the previous
@@ -1016,7 +1008,7 @@ MAIN_APPLICATION = *
 	lda (MEMCPY_SRC),y
 	sta (MEMCPY_TGT),y
 	iny
-	cpy Product
+	cpy EditBufferLen
 	bne @CopyLoop
 
 	; Also copy the last byte
@@ -1035,23 +1027,11 @@ MAIN_APPLICATION = *
 	dex
 	bpl @RestoreBottomLine
 
-	lda #$02
-	sta EditClearPreview
-	jmp UpdateFrameEditor
+	jmp DrawBitMatrix
 .endproc
 
 .proc ShiftGridDown
 	jsr SetDirty
-
-	ldy EditColumnBytes
-	ldx EditLines
-	stx Multiplicand
-	sty Multiplier
-
-	lda #$00
-	sta Multiplicand+1
-	sta Multiplier+1
-	jsr Mult16x16
 
 	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_SRC
 
@@ -1064,7 +1044,7 @@ MAIN_APPLICATION = *
 	adc #$00
 	sta MEMCPY_TGT+1
 
-	ldy Product
+	ldy EditBufferLen
 	ldx EditColumnBytes
 	dex
 	dey
@@ -1077,7 +1057,7 @@ MAIN_APPLICATION = *
 	dex
 	bpl @SaveBottomLine
 
-	ldy Product
+	ldy EditBufferLen
 	dey
 
 @CopyLoop:
@@ -1095,9 +1075,7 @@ MAIN_APPLICATION = *
 	dey
 	bpl @RestoreTopLine
 
-	lda #$02
-	sta EditClearPreview
-	jmp UpdateFrameEditor
+	jmp DrawBitMatrix
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -1481,7 +1459,7 @@ MAIN_APPLICATION = *
 	beq @OnlyCopy
 
 	; Clear flag
-	jsr ClearPreviewSprite
+	jsr ClearGrid
 	jsr @UpdateFrame
 	lda #$00
 	sta EditClearPreview
@@ -1499,7 +1477,6 @@ MAIN_APPLICATION = *
 
 @SkipCopy:
 	jsr DrawBitMatrix
-	;jsr MoveCursorHome
 	ldy EditCursorX
 	lda (CURSOR_LINE),y
 	ora #$80
@@ -1550,18 +1527,19 @@ MAIN_APPLICATION = *
 
 ; If the user pressed the key, we move the cursor
 ; to the top left corner, otherwise it stays where it is.
-.proc ClearPreviewSpriteKey
-	jsr ClearPreviewSprite
+.proc ClearGridHome
+	jsr ClearGrid
 	SetPointer SPRITE_PREVIEW_BUFFER, PIXEL_LINE
 	jmp MoveCursorHome
 .endproc
 
 ; Clear the preview sprite buffer
-.proc ClearPreviewSprite
+.proc ClearGrid
 	jsr SetDirty
 
 	lda #$00
-	ldy #SPRITE_BUFFER_LEN-1
+	ldy EditBufferLen
+	dey
 
 @Loop:
 	sta SPRITE_PREVIEW_BUFFER,y
@@ -1572,16 +1550,15 @@ MAIN_APPLICATION = *
 
 .endproc
 
-; Invert the preview sprite buffer
-.proc InvertSprite
-
+.proc InvertGrid
 	jsr SetDirty
-	ldy #SPRITE_BUFFER_LEN-1
+	ldy EditBufferLen
+	dey
 
 @Loop:
-	lda SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN,y
+	lda SPRITE_PREVIEW_BUFFER,y
 	eor #$ff
-	sta SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN,y
+	sta SPRITE_PREVIEW_BUFFER,y
 	dey
 	bpl @Loop
 
@@ -1927,7 +1904,7 @@ MAIN_APPLICATION = *
 	jmp UpdateFrameEditor
 .endproc
 
-.proc UndoFrame	
+.proc UndoSpriteFrame
 	lda CurFrame
 	ldy #SPRITE_PREVIEW_TGT
 	jsr CopySpriteFrame
@@ -2205,7 +2182,7 @@ MAIN_APPLICATION = *
 	jmp PrintByteDec
 .endproc
 
-.proc ToggleSpritePixel
+.proc ToggleGridPixel
 	jsr SetDirty
 
 	ldy #$00			; Byte index
@@ -3020,7 +2997,7 @@ MAIN_APPLICATION = *
 	stx CurFrame
 	inx					; Will be decreased on exit
 	stx MaxFrame
-	jsr ClearPreviewSpriteKey
+	jsr ClearGridHome
 	ldx #$00
 	ldy #SPRITE_PREVIEW_SRC
 	jsr CopySpriteFrame
@@ -3113,7 +3090,7 @@ SCANKEYS_BLOCK_IRQ = 1
 
 ;                            1         2         3         4
 ;                  0123456789012345678901234567890123456789
-VersionTxt: .byte "SPREDDI V0.80 BY GERHARD GRUBER",0
+VersionTxt: .byte "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
 TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0
 TMP_VAL_2: .word 0
@@ -3130,6 +3107,10 @@ EditCursorY:	.byte 0
 EditClearPreview: .byte 0	; Clear the preview when the frame is updated if set to 1
 ; Size of a framebuffer. 64 for a sprite and 8 for a character
 EditFrameSize: .byte 0
+; Same as EditFrameSize, only it can differ slightly.
+; A sprite is 3*21 = 63 bytes, but the sprite pointer accepts only multiples of 64
+; so this value defines the actual bytelength.
+EditBufferLen:	.byte 0
 
 ; Temp for drawing the edit box
 EditCurChar: .byte 0
@@ -3244,17 +3225,17 @@ KEYMAP_SIZE = 5
 ;	Space key + RIGHT SHIFT only will trigger
 ;	DefineKey KEY_SHIFT_RIGHT, $20, Function
 SpriteEditorKeyMap:
-	DefineKey 0, $20, REPEAT_KEY,    ToggleSpritePixel				; SPACE
+	DefineKey 0, $20, REPEAT_KEY,    ToggleGridPixel				; SPACE
 	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
-	DefineKey 0, $14, NO_REPEAT_KEY, ClearPreviewSpriteKey			; DEL
+	DefineKey 0, $14, NO_REPEAT_KEY, ClearGridHome					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
 	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
 	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
-	DefineKey 0, $49, NO_REPEAT_KEY, InvertSprite					; I
+	DefineKey 0, $49, NO_REPEAT_KEY, InvertGrid						; I
 	DefineKey 0, $4e, NO_REPEAT_KEY, AppendFrameKey					; N
 	DefineKey 0, $4c, NO_REPEAT_KEY, LoadSprites					; L
 	DefineKey 0, $53, NO_REPEAT_KEY, SaveSprites					; S
@@ -3264,7 +3245,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, '1', NO_REPEAT_KEY, IncSpriteColor1				; 1
 	DefineKey 0, '2', NO_REPEAT_KEY, IncSpriteColor2				; 2
 	DefineKey 0, '3', NO_REPEAT_KEY, IncSpriteColor3				; 3
-	DefineKey 0, $55, NO_REPEAT_KEY, UndoFrame						; U
+	DefineKey 0, $55, NO_REPEAT_KEY, UndoSpriteFrame				; U
 	DefineKey 0, $03, NO_REPEAT_KEY, SetMainExit					; RUN/STOP
 
 	; SHIFT keys
