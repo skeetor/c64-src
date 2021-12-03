@@ -16,8 +16,9 @@ These keys work in all editor modes<br><br>
 ### <u><b>Sprite editor</b></u><br>
 
 <b>C</b> - Copy from frame N to current<br>
-<b>D</b> - Delete current frame<br>
-<b>SHIFT D</b> - Delete frame N..M<br>
+<b>*D</b> - Clear grid<br>
+<b>*SHIFT D</b> - Delete current frame<br>
+<b>*COMMODORE D?</b> - Delete frame N..M<br>
 <b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>G</b> - Goto frame<br>
@@ -35,19 +36,23 @@ These keys work in all editor modes<br><br>
 <b>SPC</b> - Toggle bit<br>
 <b>,</b> - Previous frame<br>
 <b>.</b> - Next frame<br>
+<b>ENTER</b> - Goto begin of next line<br>
+<b>*COMMODORE L</b> - Insert line<br>
+<b>*COMMODORE C</b> - Insert Column<br>
+<b>*F</b> - Flip horizontally<br>
+<b>*SHIFT F</b> - Flip vertically<br>
 <b>SHIFT EXT CRSR Left/Right</b> - next/previous frame<br>
 
     Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.
 
 <b>CRSR Left/Right/Up/Down</b> - Move cursor in edit grid<br>
-<b>*COMMODORE CRSR Left/Right</b> - Shift grid left/right<br>
+<b>COMMODORE CRSR Left/Right</b> - Shift grid left/right<br>
 <b>COMMODORE CRSR Up/Down</b> - Shift grid up/down<br>
-<b>*COMMODORE A</b> - Shift grid left<br>
-<b>*COMMODORE D</b> - Shift grid right<br>
 <b>COMMODORE W</b> - Shift grid up<br>
+<b>COMMODORE A</b> - Shift grid left<br>
 <b>COMMODORE S</b> - Shift grid down<br>
+<b>COMMODORE D</b> - Shift grid right<br>
 <b>HOME</b> - Cursor to top first pixel<br>
-<b>DEL</b> - Clear grid<br>
 <b>1</b> - Cycle Spritecolor 1<br>
 <b>2</b> - Cycle Spritecolor 2 &lt;Multicolor&gt;<br>
 <b>3</b> - Cycle Spritecolor 3 &lt;Multicolor&gt;<br>

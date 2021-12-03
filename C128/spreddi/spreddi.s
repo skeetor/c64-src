@@ -14,7 +14,7 @@ CONSOLE_PTR			= SCREEN_PTR	; $e0
 
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
-DATA_PTR			= ZP_BASE+0
+DATA_PTR			= ZP_BASE+0	; No longer in use
 STRING_PTR			= ZP_BASE+2
 KEYMAP_PTR			= ZP_BASE+4
 MEMCPY_SRC			= ZP_BASE+6
@@ -54,6 +54,7 @@ MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
 MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The first frame
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
+CURSOR_HOME_POS		= SCREEN_VIC+SCREEN_COLUMNS+1
 
 
 ; Flags for copying sprites from/to the preview buffer
@@ -562,15 +563,13 @@ MAIN_APPLICATION = *
 	jsr PrintStringZ
 
 	; Cursor position
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
+	SetPointer CURSOR_HOME_POS, CURSOR_LINE
 	SetPointer SPRITE_PREVIEW_BUFFER, PIXEL_LINE
 
 	ldy #0
 	sty EditCursorX
 	sty EditCursorY
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
+	jsr ShowCursor
 
 	lda #$00
 	jsr SpriteColorMode
@@ -810,13 +809,25 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc MoveCursorHome
-
-	; Clear old cursor
+.proc HideCursor
 	ldy EditCursorX
 	lda (CURSOR_LINE),y
 	and #$7f
 	sta (CURSOR_LINE),y
+	rts
+.endproc
+
+.proc ShowCursor
+	ldy EditCursorX
+	lda (CURSOR_LINE),y
+	ora #$80
+	sta (CURSOR_LINE),y
+	rts
+.endproc
+
+.proc MoveCursorHome
+
+	jsr HideCursor
 
 	; Reset line pointer ...
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CURSOR_LINE
@@ -826,10 +837,14 @@ MAIN_APPLICATION = *
 	sty EditCursorX
 	sty EditCursorY
 
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
-	rts
+	jmp ShowCursor
+.endproc
+
+.proc MoveCursorNextLine
+	jsr HideCursor
+	ldy #$00
+	sty EditCursorX
+	jmp MoveCursorDown
 .endproc
 
 .proc MoveCursorRight
@@ -887,20 +902,13 @@ MAIN_APPLICATION = *
 ; X - New position
 .proc MoveCursorHoriz
 
-	lda (CURSOR_LINE),y
-	and #$7f
-	sta (CURSOR_LINE),y
+	jsr HideCursor
 
 	txa
 	tay
 
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
-
 	sty EditCursorX
-
-	rts
+	jmp ShowCursor
 .endproc
 
 .proc MoveCursorDown
@@ -910,10 +918,7 @@ MAIN_APPLICATION = *
 	bge @Done
 
 	sty EditCursorY
-	ldy EditCursorX
-	lda (CURSOR_LINE),y
-	and #$7f
-	sta (CURSOR_LINE),y
+	jsr HideCursor
 
 	clc
 	lda CURSOR_LINE
@@ -932,9 +937,7 @@ MAIN_APPLICATION = *
 	adc #$00
 	sta PIXEL_LINE+1
 
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
+	jmp ShowCursor
 
 @Done:
 	rts
@@ -947,11 +950,7 @@ MAIN_APPLICATION = *
 
 	dey
 	sty EditCursorY
-
-	ldy EditCursorX
-	lda (CURSOR_LINE),y
-	and #$7f
-	sta (CURSOR_LINE),y
+	jsr HideCursor
 
 	sec
 	lda CURSOR_LINE
@@ -970,9 +969,7 @@ MAIN_APPLICATION = *
 	sbc #$00
 	sta PIXEL_LINE+1
 
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
+	jmp ShowCursor
 
 @Done:
 	rts
@@ -1078,12 +1075,83 @@ MAIN_APPLICATION = *
 	jmp DrawBitMatrix
 .endproc
 
+.proc ShiftGridLeft
+	jsr SetDirty
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+	jsr HideCursor
+
+	ldx EditLines
+	dex
+
+@NextLine:
+	ldy #$00
+	lda (CONSOLE_PTR),y			; First byte of grid line needs to be saved
+	sta TMP_VAL_0
+
+@LineLoop:
+	iny
+	lda (CONSOLE_PTR),y
+	dey
+	sta (CONSOLE_PTR),y
+	iny
+	cpy EditColumns
+	bne @LineLoop
+
+	; Restore the saved first byte to the right side
+	dey
+	lda TMP_VAL_0
+	sta (CONSOLE_PTR),y
+
+	jsr NextLine
+	dex
+	bpl @NextLine
+
+	jsr GridToMem
+	jmp DrawBitMatrix
+.endproc
+
+.proc ShiftGridRight
+	jsr SetDirty
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+	jsr HideCursor
+
+	ldx EditLines
+	dex
+
+@NextLine:
+	ldy EditColumns
+	dey
+	lda (CONSOLE_PTR),y			; Last byte of grid line needs to be saved
+	sta TMP_VAL_0
+
+@LineLoop:
+	dey
+	lda (CONSOLE_PTR),y
+	iny
+	sta (CONSOLE_PTR),y
+	dey
+	bpl @LineLoop
+
+	iny
+	lda TMP_VAL_0
+	sta (CONSOLE_PTR),y
+
+	jsr NextLine
+
+	dex
+	bpl @NextLine
+
+	jsr GridToMem
+	jmp DrawBitMatrix
+.endproc
+
 ; Draw a border around the preview sprite, so the user
 ; has a reference frame.
 ;
 ; Locals:
 ; CONSOLE_PTR - Pointer to screen
-; DATA_PTR - Pointer to screen
+; MEMCPY_TGT - Pointer to screen
 ; $57 - Columns
 ; $58 - Lines
 ; 
@@ -1372,7 +1440,7 @@ MAIN_APPLICATION = *
 
 	; Editormatrix screen position
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS+1), CONSOLE_PTR
-	SetPointer (SPRITE_PREVIEW_BUFFER), DATA_PTR
+	SetPointer (SPRITE_PREVIEW_BUFFER), MEMCPY_TGT
 
 	lda EditLines
 	sta EditCurLine
@@ -1386,18 +1454,18 @@ MAIN_APPLICATION = *
 @nextColumn:
 	sty TMP_VAL_0
 	ldy #0
-	lda (DATA_PTR),y
+	lda (MEMCPY_TGT),y
 	ldy TMP_VAL_0
 	sta EditCurChar
 
 	; next byte
 	clc
-	lda	DATA_PTR
+	lda	MEMCPY_TGT
 	adc #1
-	sta DATA_PTR
-	lda DATA_PTR+1
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT+1
 	adc #0
-	sta DATA_PTR+1
+	sta MEMCPY_TGT+1
 
 	ldx #8
 
@@ -1445,6 +1513,78 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Convert the current grid to memory binary
+.proc GridToMem
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	; Bitmask for current bit
+	ldx EditLines
+	dex
+	stx TMP_VAL_2			; Linecount
+
+	lda #$80
+	sta TMP_VAL_0			; Bitmask for current bit
+	lda #$00
+	tax						; Sprite buffer index
+	sta TMP_VAL_1			; Current value
+	lda #$07
+	sta TMP_VAL_3			; bitcount
+	bne @EnterLoop
+
+@LineLoop:
+	lda (CONSOLE_PTR),y
+	cmp #'*'
+	bne @NextBit			; If bit is not set, we can advance to the next bit
+
+	; Set the current bit
+	lda TMP_VAL_1
+	ora TMP_VAL_0
+	sta TMP_VAL_1
+
+@NextBit:
+	lda TMP_VAL_0
+	clc
+	ror
+	sta TMP_VAL_0
+	iny						; Grid columnindex
+	dec TMP_VAL_2+1			; Columncount
+	dec TMP_VAL_3			; Bitcount
+	bpl @LineLoop
+
+	; Save the updated byte
+	lda TMP_VAL_1
+	sta SPRITE_PREVIEW_BUFFER,x
+
+	; Reset byte values
+	lda #$80
+	sta TMP_VAL_0			; Bitmask for current bit
+	lda #$00
+	sta TMP_VAL_1			; Current value
+	lda #$07
+	sta TMP_VAL_3			; bitcount
+
+	inx						; Bytebuffer index
+	lda TMP_VAL_2+1			; Columncount
+	bpl @LineLoop
+
+	jsr NextLine
+
+	dec TMP_VAL_2			; Lines done?
+	bmi @Done
+
+@EnterLoop:
+	ldy EditColumns
+	dey
+	sty TMP_VAL_2+1			; Columncount
+
+	ldy #$00
+
+	jmp @LineLoop
+
+@Done:
+	rts
+.endproc
+
 ; Copy the current frame to the preview sprite buffer
 ; and update the editing matrix.
 .proc UpdateFrameEditor
@@ -1464,10 +1604,7 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta EditClearPreview
 
-	ldy EditCursorX
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
+	jsr ShowCursor
 	rts
 
 @OnlyCopy:
@@ -1477,11 +1614,7 @@ MAIN_APPLICATION = *
 
 @SkipCopy:
 	jsr DrawBitMatrix
-	ldy EditCursorX
-	lda (CURSOR_LINE),y
-	ora #$80
-	sta (CURSOR_LINE),y
-
+	jsr ShowCursor
 @UpdateFrame:
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*1), STRING_PTR
@@ -2950,6 +3083,7 @@ MAIN_APPLICATION = *
 
 .proc LoadSprites
 
+	jsr HideCursor
 	jsr WaitKeyboardRelease
 	jsr EnterFilename
 	lbeq @Cancel
@@ -3232,6 +3366,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
 	DefineKey 0, $14, NO_REPEAT_KEY, ClearGridHome					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
+	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
 	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
 	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
@@ -3256,9 +3391,12 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteRange			; SHIFT-D
 
 	; COMMODORE keys
-	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; COMMODORE-N
-	DefineKey KEY_COMMODORE, $b3, REPEAT_KEY, ShiftGridUp			; COMMODORE-W
-	DefineKey KEY_COMMODORE, $ae, REPEAT_KEY, ShiftGridDown			; COMMODORE-S
+	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; CMDR-N
+
+	DefineKey KEY_COMMODORE, $b3, REPEAT_KEY, ShiftGridUp			; CMDR-W
+	DefineKey KEY_COMMODORE, $ae, REPEAT_KEY, ShiftGridDown			; CMDR-S
+	DefineKey KEY_COMMODORE, $b0, REPEAT_KEY, ShiftGridLeft			; CMDR-A
+	DefineKey KEY_COMMODORE, $ac, REPEAT_KEY, ShiftGridRight		; CMDR-D
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, REPEAT_KEY,      MoveCursorRight		; CRSR-Right/Keypad
@@ -3269,8 +3407,10 @@ SpriteEditorKeyMap:
 	DefineKey KEY_EXT|KEY_SHIFT, $1d, REPEAT_KEY, NextFrame			; CRSR-Right/Keypad
 	DefineKey KEY_EXT|KEY_SHIFT, $9d, REPEAT_KEY, PreviousFrame		; CRSR-Left/Keypad
 
-	DefineKey KEY_EXT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; COMMODORE-CRSR-Up
-	DefineKey KEY_EXT|KEY_COMMODORE, $11, REPEAT_KEY, ShiftGridDown	; COMMODORE-CRSR-Down
+	DefineKey KEY_EXT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; CMDR-CRSR-Up
+	DefineKey KEY_EXT|KEY_COMMODORE, $11, REPEAT_KEY, ShiftGridDown	; CMDR-CRSR-Down
+	DefineKey KEY_EXT|KEY_COMMODORE, $9d, REPEAT_KEY, ShiftGridLeft	; CMDR-CRSR-Left
+	DefineKey KEY_EXT|KEY_COMMODORE, $1d, REPEAT_KEY, ShiftGridRight; CMDR-CRSR-Right
 
 	; End of map
 	DefineKey 0,0,0,0
