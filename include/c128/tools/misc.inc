@@ -15,4 +15,5 @@ _TOOLS_INC = 1
 		sta     Pointer+1
 .endmacro
 
+.define HI +1
 .endif	; _TOOLS_INC

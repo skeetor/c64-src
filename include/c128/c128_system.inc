@@ -178,6 +178,6 @@ MMU_LOAD_CRD		= $ff04
 ; further processing.
 SPRINT				= $12fd
 
-C128_KEY_LINES 		= 11
+.define C128_KEY_LINES	11
 
 .endif		; _C128_SYSTEM_INC

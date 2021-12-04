@@ -6,8 +6,11 @@
 .include "screenmap.inc"
 
 .include "c128_system.inc"
+.include "c128_system.inc"
 .include "tools/misc.inc"
 .include "tools/intrinsics.inc"
+
+;SHOW_DEBUG_SPRITE  = 1
 
 ; Zeropage variables
 CONSOLE_PTR			= SCREEN_PTR	; $e0
@@ -28,11 +31,12 @@ PIXEL_LINE			= ZP_BASE+14
 KEYTABLE_PTR		= $fb
 
 ; Library variables
-KEY_LINES			= C128_KEY_LINES
+.define KEY_LINES	C128_KEY_LINES
 
 ; Position of the color text.
-COLOR_TXT_ROW = 12
-COLOR_TXT_COLUMN = 27
+COLOR_TXT_ROW		= 12
+COLOR_TXT_COLUMN	= 27
+
 ; Position of the character that shows the selected color 
 
 ; Sprite editor constants
@@ -55,7 +59,6 @@ MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The fir
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
 CURSOR_HOME_POS		= SCREEN_VIC+SCREEN_COLUMNS+1
-
 
 ; Flags for copying sprites from/to the preview buffer
 SPRITE_PREVIEW_SRC	= $01
@@ -134,8 +137,6 @@ basicstub:
 	sta SPRINT
 	cli
 
-	;jsr CreateDebugSprite
-
 	; Enable preview sprite
 	lda #(SPRITE_BASE+SPRITE_PREVIEW*SPRITE_BUFFER_LEN)/SPRITE_BUFFER_LEN			; Sprite data address
 	sta SPRITE_PTR+SPRITE_PREVIEW
@@ -170,6 +171,10 @@ basicstub:
 
 	; Now switch to sprite editor as default
 	jsr SpriteEditor
+
+.ifdef SHOW_DEBUG_SPRITE
+	jsr CreateDebugSprite
+.endif
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	SetPointer VersionTxt, STRING_PTR
@@ -208,6 +213,48 @@ basicstub:
 	rts
 .endproc
 
+.ifdef SHOW_DEBUG_SPRITE
+.proc CreateDebugSprite
+	ldy #SPRITE_BUFFER_LEN-1
+	lda #255
+
+@InitSprite:
+	sta SPRITE_USER_START,y
+	dey
+	bpl @InitSprite
+
+	lda #0
+	sta SPRITE_USER_START+1
+	sta SPRITE_USER_START+(3*20)+1
+
+	lda #$7f
+	sta SPRITE_USER_START+(3*7)
+	sta SPRITE_USER_START+(3*8)
+	sta SPRITE_USER_START+(3*9)
+	sta SPRITE_USER_START+(3*10)
+	sta SPRITE_USER_START+(3*11)
+	sta SPRITE_USER_START+(3*12)
+	sta SPRITE_USER_START+(3*13)
+
+	lda #$fe
+
+	sta SPRITE_USER_START+(3*7)+2
+	sta SPRITE_USER_START+(3*8)+2
+	sta SPRITE_USER_START+(3*9)+2
+	sta SPRITE_USER_START+(3*10)+2
+	sta SPRITE_USER_START+(3*11)+2
+	sta SPRITE_USER_START+(3*12)+2
+	sta SPRITE_USER_START+(3*13)+2
+
+	lda #0					; A - Source frame
+	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
+	jsr CopySpriteFrame
+	jsr DrawBitMatrix
+
+	rts
+.endproc
+.endif ; SHOW_DEBUG_SPRITE
+
 .proc Setup
 
 	MAIN_APPLICATION_LEN = (MAIN_APPLICATION_END-MAIN_APPLICATION)
@@ -216,6 +263,8 @@ basicstub:
 	lda #$00
 	sta MainExitFlag
 	sta MMU_CR_IO
+	sta EditCursorX
+	sta EditCursorY
 
 	sei
 
@@ -281,10 +330,10 @@ basicstub:
 
 	lda	#$00
 	sta Multiplicand
-	sta Multiplicand+1
-	sta Multiplier+1
+	sta Multiplicand HI
+	sta Multiplier HI
 	sta Product
-	sta Product+1
+	sta Product HI
 	sta Product+2
 	sta Product+3
 
@@ -411,10 +460,10 @@ basicstub:
 	sta KeytableNormal
 	adc #KeyTableLen
 	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	sta KeytableNormal+1
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; Shifted keys
 	SetPointer $fad9, MEMCPY_SRC
@@ -426,10 +475,10 @@ basicstub:
 	sta KeytableShift
 	adc #KeyTableLen
 	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	sta KeytableShift+1
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; Commodore keys
 	SetPointer $fb32, MEMCPY_SRC
@@ -441,10 +490,10 @@ basicstub:
 	sta KeytableCommodore
 	adc #KeyTableLen
 	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	sta KeytableCommodore+1
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; CTRL keys
 	SetPointer $fb8b, MEMCPY_SRC
@@ -456,10 +505,10 @@ basicstub:
 	sta KeytableControl
 	adc #KeyTableLen
 	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	sta KeytableControl+1
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; ALT keys
 	SetPointer $fbe4, MEMCPY_SRC
@@ -469,7 +518,7 @@ basicstub:
 	clc
 	lda MEMCPY_TGT
 	sta KeytableAlt
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	sta KeytableAlt+1
 
 	rts
@@ -548,8 +597,8 @@ MAIN_APPLICATION = *
 
 	lda CONSOLE_PTR
 	sta STRING_PTR
-	lda CONSOLE_PTR+1
-	sta STRING_PTR+1
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 	lda CurFrame
 	ldx MaxFrame
 	ldy #26+6
@@ -601,7 +650,7 @@ MAIN_APPLICATION = *
 	lda KeyMapBasePtr
 	sta KEYMAP_PTR
 	lda KeyMapBasePtr+1
-	sta KEYMAP_PTR+1
+	sta KEYMAP_PTR HI
 
 	; Remove the KEY_SHIFT flag so we can properly compare
 	; against the SHIFT_LEFT/RIGHT flags.
@@ -623,7 +672,7 @@ MAIN_APPLICATION = *
 	lda $0100,x
 	and #$ff ^ KEY_SHIFT
 	sta $0100,x				; Save the modifiers without the SHIFT flags
-	lda KeyMapModifier		; Original modifiers ...
+	lda KeyMapModifier	; Original modifiers ...
 	and #(KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT) ; .. and extract the shift states
 	ora $0100,x				; Add the shift keys from the actual key
 	sta $0100,x				; push the required shift states.
@@ -657,9 +706,9 @@ MAIN_APPLICATION = *
 	lda KEYMAP_PTR
 	adc #KEYMAP_SIZE
 	sta KEYMAP_PTR
-	lda KEYMAP_PTR+1
+	lda KEYMAP_PTR HI
 	adc #$00
-	sta KEYMAP_PTR+1
+	sta KEYMAP_PTR HI
 
 	; If the functionpointer is a nullptr we have reached the end of the map.
 	ldy #$03
@@ -924,18 +973,18 @@ MAIN_APPLICATION = *
 	lda CURSOR_LINE
 	adc #SCREEN_COLUMNS
 	sta CURSOR_LINE
-	lda CURSOR_LINE+1
+	lda CURSOR_LINE HI
 	adc #$00
-	sta CURSOR_LINE+1
+	sta CURSOR_LINE HI
 
 	; Go to next line
 	clc
 	lda PIXEL_LINE
 	adc EditColumnBytes
 	sta PIXEL_LINE
-	lda PIXEL_LINE+1
+	lda PIXEL_LINE HI
 	adc #$00
-	sta PIXEL_LINE+1
+	sta PIXEL_LINE HI
 
 	jmp ShowCursor
 
@@ -956,18 +1005,18 @@ MAIN_APPLICATION = *
 	lda CURSOR_LINE
 	sbc #SCREEN_COLUMNS
 	sta CURSOR_LINE
-	lda CURSOR_LINE+1
+	lda CURSOR_LINE HI
 	sbc #$00
-	sta CURSOR_LINE+1
+	sta CURSOR_LINE HI
 
 	; Go to previous line
 	sec
 	lda PIXEL_LINE
 	sbc EditColumnBytes
 	sta PIXEL_LINE
-	lda PIXEL_LINE+1
+	lda PIXEL_LINE HI
 	sbc #$00
-	sta PIXEL_LINE+1
+	sta PIXEL_LINE HI
 
 	jmp ShowCursor
 
@@ -987,7 +1036,7 @@ MAIN_APPLICATION = *
 	sta MEMCPY_SRC
 	lda #>SPRITE_PREVIEW_BUFFER
 	adc #$00
-	sta MEMCPY_SRC+1
+	sta MEMCPY_SRC HI
 
 	ldy EditColumnBytes
 	dey
@@ -1024,7 +1073,8 @@ MAIN_APPLICATION = *
 	dex
 	bpl @RestoreBottomLine
 
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	jmp ShowCursor
 .endproc
 
 .proc ShiftGridDown
@@ -1039,7 +1089,7 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT
 	lda #>SPRITE_PREVIEW_BUFFER
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	ldy EditBufferLen
 	ldx EditColumnBytes
@@ -1072,7 +1122,8 @@ MAIN_APPLICATION = *
 	dey
 	bpl @RestoreTopLine
 
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	jmp ShowCursor
 .endproc
 
 .proc ShiftGridLeft
@@ -1107,7 +1158,8 @@ MAIN_APPLICATION = *
 	bpl @NextLine
 
 	jsr GridToMem
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	jmp ShowCursor
 .endproc
 
 .proc ShiftGridRight
@@ -1143,7 +1195,124 @@ MAIN_APPLICATION = *
 	bpl @NextLine
 
 	jsr GridToMem
-	jmp DrawBitMatrix
+	jsr DrawBitMatrix
+	jmp ShowCursor
+.endproc
+
+.proc FlipHorizontal
+	jsr HideCursor
+	jsr SetDirty
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	; Calculate the bottom line
+	ldx EditLines			; Backward linecount
+	dex
+	stx Multiplicand
+	lda #$00
+	sta Multiplicand HI
+	sta Multiplier HI
+	lda #SCREEN_COLUMNS
+	sta Multiplier
+	jsr Mult16x16
+
+	clc
+	lda #<(CURSOR_HOME_POS)
+	adc Product
+	sta MEMCPY_TGT
+	lda #>(CURSOR_HOME_POS)
+	adc Product HI
+	sta MEMCPY_TGT HI
+
+	ldx EditLines			; Backward linecount
+	dex
+	lda #$00
+	sta TMP_VAL_0			; Forward linecount 
+
+@NextLine:
+	ldy EditColumns
+	dey
+
+@CopyGridLine:
+	lda (CONSOLE_PTR),y
+	pha
+	lda (MEMCPY_TGT),y
+	sta (CONSOLE_PTR),y
+	pla
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @CopyGridLine
+
+	inc TMP_VAL_0
+	dex
+	cpx TMP_VAL_0
+	beq @Done
+	bcc @Done
+
+	jsr NextLine
+
+	sec
+	lda MEMCPY_TGT
+	sbc #SCREEN_COLUMNS
+	sta MEMCPY_TGT
+	lda MEMCPY_TGT HI
+	sbc	#$00
+	sta MEMCPY_TGT HI
+	jmp @NextLine
+
+@Done:
+	jsr GridToMem
+	jmp ShowCursor
+.endproc
+
+.proc FlipVertical
+	jsr HideCursor
+	jsr SetDirty
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	ldx EditLines
+	stx TMP_VAL_1		; Linecount
+	bne @EnterLoop
+
+@LineLoop:
+	ldy TMP_VAL_0		; Left index
+	lda (CONSOLE_PTR),y	; Load left value
+
+	tax					; Remember left value
+	ldy TMP_VAL_0 HI		; Right index
+	lda (CONSOLE_PTR),y	; Load right value
+
+	pha					; Swap with left value
+	txa
+	sta (CONSOLE_PTR),y	; Write left value to right side
+	ldy TMP_VAL_0
+	pla
+	sta (CONSOLE_PTR),y	; Write right value to left side
+
+	inc TMP_VAL_0
+	dec TMP_VAL_0 HI
+
+	iny
+	cpy TMP_VAL_0 HI
+	beq @LineLoop
+	bcc @LineLoop
+	jsr NextLine
+
+@EnterLoop:
+	dec TMP_VAL_1		; Linecount
+	bmi @Done
+
+	ldy #$00
+	sty TMP_VAL_0		; Front
+	ldy EditColumns		; Back
+	dey
+	sty TMP_VAL_0 HI
+	jmp @LineLoop
+
+@Done:
+	jsr GridToMem
+	jmp ShowCursor
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -1381,23 +1550,22 @@ MAIN_APPLICATION = *
 	adc #SCREEN_COLUMNS
 	sta CONSOLE_PTR
 
-	lda	CONSOLE_PTR+1
+	lda	CONSOLE_PTR HI
 	adc #0
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	rts
 .endproc
 
 .proc PrevLine
-
-	lda CONSOLE_PTR
 	sec
+	lda CONSOLE_PTR
 	sbc #SCREEN_COLUMNS
 	sta CONSOLE_PTR
 
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	sbc	#$00
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	rts
 .endproc
@@ -1463,9 +1631,9 @@ MAIN_APPLICATION = *
 	lda	MEMCPY_TGT
 	adc #1
 	sta MEMCPY_TGT
-	lda MEMCPY_TGT+1
+	lda MEMCPY_TGT HI
 	adc #0
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	ldx #8
 
@@ -1525,7 +1693,7 @@ MAIN_APPLICATION = *
 	lda #$80
 	sta TMP_VAL_0			; Bitmask for current bit
 	lda #$00
-	tax						; Sprite buffer index
+	tax								; Sprite buffer index
 	sta TMP_VAL_1			; Current value
 	lda #$07
 	sta TMP_VAL_3			; bitcount
@@ -1547,7 +1715,7 @@ MAIN_APPLICATION = *
 	ror
 	sta TMP_VAL_0
 	iny						; Grid columnindex
-	dec TMP_VAL_2+1			; Columncount
+	dec TMP_VAL_2 HI		; Columncount
 	dec TMP_VAL_3			; Bitcount
 	bpl @LineLoop
 
@@ -1564,7 +1732,7 @@ MAIN_APPLICATION = *
 	sta TMP_VAL_3			; bitcount
 
 	inx						; Bytebuffer index
-	lda TMP_VAL_2+1			; Columncount
+	lda TMP_VAL_2 HI			; Columncount
 	bpl @LineLoop
 
 	jsr NextLine
@@ -1575,7 +1743,7 @@ MAIN_APPLICATION = *
 @EnterLoop:
 	ldy EditColumns
 	dey
-	sty TMP_VAL_2+1			; Columncount
+	sty TMP_VAL_2 HI			; Columncount
 
 	ldy #$00
 
@@ -1639,9 +1807,9 @@ MAIN_APPLICATION = *
 
 	sta Multiplicand
 	lda #$00
-	sta Multiplicand+1
+	sta Multiplicand HI
 
-	sta Multiplier+1
+	sta Multiplier HI
 	lda #SPRITE_BUFFER_LEN
 	sta Multiplier
 	jsr Mult16x16
@@ -1651,7 +1819,7 @@ MAIN_APPLICATION = *
 	adc Product
 	sta FramePtr
 	lda #>(SPRITE_USER_START)
-	adc Product+1
+	adc Product HI
 	sta FramePtr+1
 
 	rts
@@ -1756,9 +1924,7 @@ MAIN_APPLICATION = *
 	jsr SwitchFrame
 
 	; Clear the input control
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
-	ldy #0
-	jmp ClearLine
+	jmp ClearStatusLines
 
 @Cancel:
 	rts
@@ -2076,7 +2242,7 @@ MAIN_APPLICATION = *
 	lda FramePtr
 	sta MEMCPY_TGT
 	lda FramePtr+1
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 @CheckSrc:
 	tya
@@ -2091,7 +2257,7 @@ MAIN_APPLICATION = *
 	lda FramePtr
 	sta MEMCPY_SRC
 	lda FramePtr+1
-	sta MEMCPY_SRC+1
+	sta MEMCPY_SRC HI
 .endproc
 
 ; Copy a single sprite frame buffer
@@ -2125,14 +2291,14 @@ MAIN_APPLICATION = *
 	lda FramePtr
 	sta MEMCPY_SRC
 	lda FramePtr+1
-	sta MEMCPY_SRC+1
+	sta MEMCPY_SRC HI
 
 	lda MoveTargetFrame
 	jsr CalcFramePointer
 	lda FramePtr
 	sta MEMCPY_TGT
 	lda FramePtr+1
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; Last frame is increased by 1 because we want the
 	; endaddress of the last frame.
@@ -2147,7 +2313,7 @@ MAIN_APPLICATION = *
 	sbc MEMCPY_SRC
 	tax
 	lda FramePtr+1
-	sbc MEMCPY_SRC+1
+	sbc MEMCPY_SRC HI
 	jmp memcpy
 
 .endproc
@@ -2177,9 +2343,9 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR
 	adc RectangleLineOffset
 	sta CONSOLE_PTR
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	adc #0
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	ldy TMP_VAL_0
 	lda TMP_VAL_1
@@ -2416,7 +2582,7 @@ MAIN_APPLICATION = *
 	lda FramePtr
 	sta MEMCPY_SRC
 	lda FramePtr+1
-	sta MEMCPY_SRC+1
+	sta MEMCPY_SRC HI
 
 	lda FrameNumberEnd
 	jsr CalcFramePointer
@@ -2428,7 +2594,7 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT
 	lda FramePtr+1
 	adc #$00
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; print WRITING ...
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
@@ -2445,8 +2611,8 @@ MAIN_APPLICATION = *
 
 	lda CONSOLE_PTR
 	sta STRING_PTR
-	lda CONSOLE_PTR+1
-	sta STRING_PTR+1
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 
 	lda FrameNumberStart
 	ldx FrameNumberEnd
@@ -2574,8 +2740,8 @@ MAIN_APPLICATION = *
 
 	lda CONSOLE_PTR
 	sta STRING_PTR
-	lda CONSOLE_PTR+1
-	sta STRING_PTR+1
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 
 	lda FrameNumberStartLo
 	ldx FrameNumberEndHi
@@ -2592,9 +2758,9 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR
 	adc FramenumberOffset
 	sta CONSOLE_PTR
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	adc #$00
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	ldx #1
 	lda EnterNumberCurVal
@@ -2613,9 +2779,9 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR
 	adc #4
 	sta CONSOLE_PTR
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	adc #$00
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	; A - CurValue
 	; X - MinValue
@@ -2695,12 +2861,12 @@ MAIN_APPLICATION = *
 @EmptyFilename:
 	lda STRING_PTR
 	pha
-	lda STRING_PTR+1
+	lda STRING_PTR HI
 	pha
 
 	lda CONSOLE_PTR
 	pha
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	pha
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
@@ -2715,12 +2881,12 @@ MAIN_APPLICATION = *
 	jsr ClearLine
 
 	pla
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 	pla
 	lda CONSOLE_PTR
 
 	pla
-	sta STRING_PTR+1
+	sta STRING_PTR HI
 	pla
 	lda STRING_PTR
 
@@ -2755,9 +2921,9 @@ MAIN_APPLICATION = *
 	tya
 	adc CONSOLE_PTR
 	sta CONSOLE_PTR
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	adc #$00
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	; Framenumber is internally stored as 0..N-1
 	; but the user should be able to enter 1...N
@@ -2884,12 +3050,12 @@ MAIN_APPLICATION = *
 @RangeError:
 	lda STRING_PTR
 	sta EnterNumberStringPtr
-	lda STRING_PTR+1
+	lda STRING_PTR HI
 	sta EnterNumberStringPtr+1
 
 	lda CONSOLE_PTR
 	sta EnterNumberConsolePtr
-	lda CONSOLE_PTR+1
+	lda CONSOLE_PTR HI
 	sta EnterNumberConsolePtr+1
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
@@ -2900,8 +3066,8 @@ MAIN_APPLICATION = *
 
 	lda CONSOLE_PTR
 	sta STRING_PTR
-	lda CONSOLE_PTR+1
-	sta STRING_PTR+1
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 
 	ldx EnterNumberMinVal
 	dex
@@ -2924,12 +3090,12 @@ MAIN_APPLICATION = *
 	lda EnterNumberConsolePtr
 	sta CONSOLE_PTR
 	lda EnterNumberConsolePtr+1
-	sta CONSOLE_PTR+1
+	sta CONSOLE_PTR HI
 
 	lda EnterNumberStringPtr
 	sta STRING_PTR
 	lda EnterNumberStringPtr+1
-	sta STRING_PTR+1
+	sta STRING_PTR HI
 
 	jmp @InputLoop
 .endproc
@@ -3098,7 +3264,7 @@ MAIN_APPLICATION = *
 	lda FramePtr
 	sta MEMCPY_TGT
 	lda FramePtr+1
-	sta MEMCPY_TGT+1
+	sta MEMCPY_TGT HI
 
 	; print READING ...
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
@@ -3115,8 +3281,8 @@ MAIN_APPLICATION = *
 
 	lda CONSOLE_PTR
 	sta STRING_PTR
-	lda CONSOLE_PTR+1
-	sta STRING_PTR+1
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 
 	lda #$ff
 	ldx #$ff
@@ -3225,10 +3391,12 @@ SCANKEYS_BLOCK_IRQ = 1
 ;                            1         2         3         4
 ;                  0123456789012345678901234567890123456789
 VersionTxt: .byte "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
+
 TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0
 TMP_VAL_2: .word 0
 TMP_VAL_3: .word 0
+
 RectangleLineOffset: .byte 0
 
 ; Number of lines/bytes to be printed as bits
@@ -3293,7 +3461,6 @@ MoveFirstFrame: .byte 0
 MoveLastFrame: .byte 0
 MoveTargetFrame: .byte 0
 MoveDirection: .word 0
-
 
 ; Characters to be used for the sprite preview border
 ; on the bottom line. This depends on the size, because
@@ -3364,11 +3531,12 @@ SpriteEditorKeyMap:
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
-	DefineKey 0, $14, NO_REPEAT_KEY, ClearGridHome					; DEL
+	DefineKey 0, $44, NO_REPEAT_KEY, ClearGridHome					; D
+	;DefineKey 0, $14, NO_REPEAT_KEY, ClearGridHome					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
 	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
-	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
+	DefineKey 0, $46, NO_REPEAT_KEY, FlipVertical					; F
 	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
 	DefineKey 0, $49, NO_REPEAT_KEY, InvertGrid						; I
 	DefineKey 0, $4e, NO_REPEAT_KEY, AppendFrameKey					; N
@@ -3384,11 +3552,15 @@ SpriteEditorKeyMap:
 	DefineKey 0, $03, NO_REPEAT_KEY, SetMainExit					; RUN/STOP
 
 	; SHIFT keys
-	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; CRSR-Left
-	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; CRSR-Up
+	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; SHIFT CRSR-Right (CRSR-Left)
+	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; SHIFT CRSR-Down (CRSR-Up)
 	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, InsertCopyFrame		; SHIFT-N
 	DefineKey KEY_SHIFT, $94, NO_REPEAT_KEY, InsertEmptyFrame		; INS (SHIFT-DEL)
-	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteRange			; SHIFT-D
+	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteCurrentFrame		; SHIFT-D
+	DefineKey KEY_SHIFT, $C6, NO_REPEAT_KEY, FlipHorizontal			; SHIFT-F
+
+	; CONTROL keys
+	DefineKey KEY_CTRL, $04, NO_REPEAT_KEY, DeleteRange				; CTRL-D
 
 	; COMMODORE keys
 	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; CMDR-N
@@ -3417,12 +3589,16 @@ SpriteEditorKeyMap:
 
 MaxFrameValue: .word MAX_FRAMES
 
+;====================================================
+.bss
+
 KeyTableLen = KEY_LINES*8
 KeyTables = *
-SymKeytableNormal		= KeyTables
-SymKeytableShift		= KeyTables + KeyTableLen
-SymKeytableCommodore 	= KeyTables + (KeyTableLen*2)
-SymKeytableControl		= KeyTables + (KeyTableLen*3)
-SymKeytableAlt 			= KeyTables + (KeyTableLen*4)
+SymKeytableNormal:		.res KeyTableLen
+SymKeytableShift:		.res KeyTableLen
+SymKeytableCommodore:	.res KeyTableLen
+SymKeytableControl:		.res KeyTableLen
+SymKeytableAlt:			.res KeyTableLen
+
 MAIN_APPLICATION_END = *
 END:
