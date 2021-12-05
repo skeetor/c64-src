@@ -27,13 +27,15 @@ These keys work in all editor modes<br><br>
 <b>*H</b> - Help screen<br>
 <b>L</b> - Load file<br>
 <b>N</b> - New empty frame at end<br>
-<b>*SHIFT N</b> - Append current frame at end (Copy)<br>
-<b>*CMDR INS</b> - New empty frame at current position (Insert)<br>
+<b>SHIFT N</b> - New empty frame at current position (Insert)<br>
+<b>CMDR N</b> - Append current frame at end (Copy)<br>
 <b>CTRL N</b> - Insert copy of current frame at current position (Insert copy)<br>
-<b>*DEL</b> - Delete Pixel and move line to left<br>
+<b>DEL</b> - Delete Column on current line<br>
 <b>*CMDR DEL</b> - Delete line<br>
-<b>*INS</b> - Insert spcace, move line to right<br>
+<b>CTRL DEL</b> - Delete columns on all lines<br>
+<b>INS</b> - Insert column on current line<br>
 <b>*CMDR INS</b> - Insert line<br>
+<b>CTRL INS</b> - Insert columns on all lines<br>
 <b>S</b> - Save File (Ask for overwriting if file exists needs to be done)<br>
 <b>M</b> - Multicolor<br>
 <b>U</b> - Undo changes by restoring the current frame<br>
@@ -43,8 +45,6 @@ These keys work in all editor modes<br><br>
 <b>,</b> - Previous frame<br>
 <b>.</b> - Next frame<br>
 <b>ENTER</b> - Goto begin of next line<br>
-<b>*CMDR L</b> - Insert line<br>
-<b>*CMDR C</b> - Insert Column<br>
 <b>SHIFT EXT CRSR Left/Right</b> - next/previous frame<br>
 
     Alternative is to use ',' for previous and '.' for next frame, because on the Commodore keyboard SHIFT-CRSR-Left is already needed for regular cursor left movement and the C128 cursor keys are not conveniently placed.

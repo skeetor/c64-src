@@ -6,6 +6,8 @@
 .ifndef _TOOLS_INC
 _TOOLS_INC = 1
 
+.define HI +1
+
 ; SetPointer will set the pointer to the specified
 ; address.
 .macro  SetPointer   addrValue, Pointer
@@ -15,5 +17,11 @@ _TOOLS_INC = 1
 		sta     Pointer+1
 .endmacro
 
-.define HI +1
+.macro  CopyPointer   PointerSrc, PointerTgt
+		lda     PointerSrc
+		sta     PointerTgt
+		lda     PointerSrc HI
+		sta     PointerTgt HI
+.endmacro
+
 .endif	; _TOOLS_INC

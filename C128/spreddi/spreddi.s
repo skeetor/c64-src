@@ -448,78 +448,66 @@ basicstub:
 ; so we can easily access it.
 .proc CopyKeytables
 
-	SetPointer KeyTables, MEMCPY_TGT
-
 	; Standard keytable without modifiers
 	SetPointer $fa80, MEMCPY_SRC
+	SetPointer SymKeytableNormal, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	clc
 	lda MEMCPY_TGT
 	sta KeytableNormal
-	adc #KeyTableLen
-	sta MEMCPY_TGT
 	lda MEMCPY_TGT HI
-	sta KeytableNormal+1
-	adc #$00
-	sta MEMCPY_TGT HI
+	sta KeytableNormal HI
 
 	; Shifted keys
 	SetPointer $fad9, MEMCPY_SRC
+	SetPointer SymKeytableShift, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	clc
 	lda MEMCPY_TGT
 	sta KeytableShift
-	adc #KeyTableLen
-	sta MEMCPY_TGT
 	lda MEMCPY_TGT HI
-	sta KeytableShift+1
-	adc #$00
-	sta MEMCPY_TGT HI
+	sta KeytableShift HI
 
 	; Commodore keys
 	SetPointer $fb32, MEMCPY_SRC
+	SetPointer SymKeytableCommodore, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	clc
 	lda MEMCPY_TGT
 	sta KeytableCommodore
-	adc #KeyTableLen
-	sta MEMCPY_TGT
 	lda MEMCPY_TGT HI
-	sta KeytableCommodore+1
-	adc #$00
-	sta MEMCPY_TGT HI
+	sta KeytableCommodore HI
 
 	; CTRL keys
 	SetPointer $fb8b, MEMCPY_SRC
+	SetPointer SymKeytableControl, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	clc
 	lda MEMCPY_TGT
 	sta KeytableControl
-	adc #KeyTableLen
-	sta MEMCPY_TGT
 	lda MEMCPY_TGT HI
-	sta KeytableControl+1
-	adc #$00
-	sta MEMCPY_TGT HI
+	sta KeytableControl HI
+
+	; Unused keycode in the kernel
+	; but we want it, so we patch it 
+	lda #$a0
+	ldy #$00				; DEL
+	sta SymKeytableControl,y
 
 	; ALT keys
 	SetPointer $fbe4, MEMCPY_SRC
+	SetPointer SymKeytableAlt, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	clc
 	lda MEMCPY_TGT
 	sta KeytableAlt
 	lda MEMCPY_TGT HI
-	sta KeytableAlt+1
+	sta KeytableAlt HI
 
 	rts
 .endproc
@@ -1280,7 +1268,7 @@ MAIN_APPLICATION = *
 	lda (CONSOLE_PTR),y	; Load left value
 
 	tax					; Remember left value
-	ldy TMP_VAL_0 HI		; Right index
+	ldy TMP_VAL_0 HI	; Right index
 	lda (CONSOLE_PTR),y	; Load right value
 
 	pha					; Swap with left value
@@ -1313,6 +1301,189 @@ MAIN_APPLICATION = *
 @Done:
 	jsr GridToMem
 	jmp ShowCursor
+.endproc
+
+.proc DeleteColumn
+	ldy EditCursorX
+	beq @Done
+
+	dey
+	sty EditCursorX
+
+	jsr HideCursor
+	jsr SetDirty
+
+	jsr DeleteColumnPixel
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	jsr GridToMem
+	jmp ShowCursor
+
+@Done:
+	rts
+.endproc
+
+.proc DeleteColumns
+	ldy EditCursorX
+	beq @Done
+
+	dey
+	sty EditCursorX
+
+	jsr HideCursor
+	jsr SetDirty
+
+	lda CURSOR_LINE
+	pha
+	lda CURSOR_LINE HI
+	pha
+
+	SetPointer CURSOR_HOME_POS, CURSOR_LINE
+
+	ldx EditLines
+	dex
+
+@LineLoop:
+	jsr DeleteColumnPixel
+
+	clc
+	lda CURSOR_LINE
+	adc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+	lda CURSOR_LINE HI
+	adc #$00
+	sta CURSOR_LINE HI
+
+	dex
+	bpl @LineLoop
+
+	pla
+	sta CURSOR_LINE HI
+	pla
+	sta CURSOR_LINE
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	jsr GridToMem
+	jmp ShowCursor
+
+@Done:
+	rts
+.endproc
+
+; Delete a column from a single line and move
+; the remainder of the line to the left
+.proc DeleteColumnPixel
+	ldy EditColumns
+	dey
+	sty TMP_VAL_0
+
+	ldy EditCursorX
+	dey
+	jmp @EnterLoop
+
+@CopyLoop:
+	iny
+	lda (CURSOR_LINE),y
+	dey
+	sta (CURSOR_LINE),y
+
+@EnterLoop:
+	iny
+	cpy TMP_VAL_0
+	bne @CopyLoop
+
+	rts
+.endproc
+
+.proc InsertColumn
+	; Cursor at last column?
+	ldy EditColumns
+	dey
+	cpy EditCursorX
+	bne :+
+	rts
+:
+	jsr HideCursor
+	jsr SetDirty
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	jsr InsertColumnPixel
+
+	jsr GridToMem
+	jmp ShowCursor
+.endproc
+
+.proc InsertColumns
+	; Cursor at last column?
+	ldy EditColumns
+	dey
+	cpy EditCursorX
+	bne :+
+	rts
+:
+	jsr HideCursor
+	jsr SetDirty
+
+	lda CURSOR_LINE
+	pha
+	lda CURSOR_LINE HI
+	pha
+
+	SetPointer CURSOR_HOME_POS, CURSOR_LINE
+
+	ldy EditColumns
+	dey
+
+	ldx EditLines
+	dex
+
+@LineLoop:
+	jsr InsertColumnPixel
+
+	clc
+	lda CURSOR_LINE
+	adc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+	lda CURSOR_LINE HI
+	adc #$00
+	sta CURSOR_LINE HI
+
+	dex
+	bpl @LineLoop
+
+	pla
+	sta CURSOR_LINE HI
+	pla
+	sta CURSOR_LINE
+
+	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
+
+	jsr GridToMem
+	jmp ShowCursor
+.endproc
+
+; Insert an empty column at the current line
+; and move the remainder of the line to the left
+.proc InsertColumnPixel
+	ldy EditColumns
+	dey
+
+@CopyLoop:
+	dey
+	lda (CURSOR_LINE),y
+	iny
+	sta (CURSOR_LINE),y
+	dey
+	cpy EditCursorX
+	bne @CopyLoop
+
+	lda #'.'
+	sta (CURSOR_LINE),y
+
+	rts
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -3532,7 +3703,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
 	DefineKey 0, $44, NO_REPEAT_KEY, ClearGridHome					; D
-	;DefineKey 0, $14, NO_REPEAT_KEY, ClearGridHome					; DEL
+	DefineKey 0, $14, REPEAT_KEY,    DeleteColumn					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
 	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
@@ -3554,13 +3725,16 @@ SpriteEditorKeyMap:
 	; SHIFT keys
 	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; SHIFT CRSR-Right (CRSR-Left)
 	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; SHIFT CRSR-Down (CRSR-Up)
-	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, InsertCopyFrame		; SHIFT-N
-	DefineKey KEY_SHIFT, $94, NO_REPEAT_KEY, InsertEmptyFrame		; INS (SHIFT-DEL)
+	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, InsertEmptyFrame		; SHIFT-N
 	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteCurrentFrame		; SHIFT-D
 	DefineKey KEY_SHIFT, $C6, NO_REPEAT_KEY, FlipHorizontal			; SHIFT-F
+	DefineKey KEY_SHIFT, $94, REPEAT_KEY,    InsertColumn			; INS
+	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
 
 	; CONTROL keys
 	DefineKey KEY_CTRL, $04, NO_REPEAT_KEY, DeleteRange				; CTRL-D
+	DefineKey KEY_CTRL, $0e, NO_REPEAT_KEY, InsertCopyFrame			; CTRL-N
+	DefineKey KEY_CTRL, $a0, REPEAT_KEY, DeleteColumns				; CTRL-DEL
 
 	; COMMODORE keys
 	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; CMDR-N
@@ -3592,8 +3766,8 @@ MaxFrameValue: .word MAX_FRAMES
 ;====================================================
 .bss
 
+; Decodiertabelle Intern p.359 $FA80
 KeyTableLen = KEY_LINES*8
-KeyTables = *
 SymKeytableNormal:		.res KeyTableLen
 SymKeytableShift:		.res KeyTableLen
 SymKeytableCommodore:	.res KeyTableLen
