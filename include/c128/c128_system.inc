@@ -113,6 +113,7 @@ BSOUT				= $ffd2
 READST				= $ffb7
 
 ; To be added to cc65
+LOCKS				= $f7
 STKEY				= $91		; Flag for STOP key. If pressed $ff otherwise $7f
 INP_NDX				= $d0		; Nuber of characters in keyboard buffer
 VIC_COLOR_RAM		= $d800
@@ -159,12 +160,13 @@ MMU_VERSION_REG		= $d50b
 
 ; Load configuration registers. These
 ; are always available, no matter what
-; config has been selected. They can be
-; read. Writing to them doesn't change
-; them, instead it will load the
+; config has been selected. MMU_LOAD_CRx
+; can be read. Writing to them doesn't
+; change them, instead it will load the
 ; corresponding value from MMU_PRE_CRx
 ; instead, so the value to be written
-; doesn't matter.
+; doesn't matter. Only MMU_LOAD_CR can
+; be written to.
 MMU_LOAD_CR			= $ff00
 MMU_LOAD_CRA		= $ff01
 MMU_LOAD_CRB		= $ff02

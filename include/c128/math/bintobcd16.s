@@ -12,7 +12,6 @@ _BINTOBCD16_INC = 1
 
 .proc BinToBCD16
 
-	sei
 	sed				; Switch to decimal mode
 	lda #0			; Ensure the result is clear
 	sta BCDVal+0
@@ -34,8 +33,8 @@ _BINTOBCD16_INC = 1
 	sta BCDVal+2
 	dex				; And repeat for next bit
 	bne @cnvbit
+
 	cld				; Back to binary mode
-	cli
 
 	rts
 

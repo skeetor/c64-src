@@ -17,7 +17,7 @@ CONSOLE_PTR			= SCREEN_PTR	; $e0
 
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
-DATA_PTR			= ZP_BASE+0	; No longer in use
+DATA_PTR			= ZP_BASE+0
 STRING_PTR			= ZP_BASE+2
 KEYMAP_PTR			= ZP_BASE+4
 MEMCPY_SRC			= ZP_BASE+6
@@ -268,6 +268,12 @@ basicstub:
 
 	sei
 
+	; Save lock state and disable it
+	lda LOCKS
+	sta LockFlag
+	lda #$ff
+	sta LOCKS
+
 	; Save Zeropage
 	ldy #ZP_BASE_LEN
 @ZPSafe:
@@ -309,7 +315,7 @@ basicstub:
 	; we need to relocate it, to make room for
 	; the VIC sprite buffers. Since this will
 	; overwrite the original data, it can not
-	; be started again. Since the program is
+	; be started again. Because the program was
 	; already relocated, we can just skip the
 	; memcpy for another run.
 	lda RelocationFlag
@@ -350,11 +356,14 @@ basicstub:
 	lda #8
 	sta DeviceNumber
 
+	jsr InstallIRQ
+
 	rts
 
 .endproc
 
 .proc Cleanup
+	jsr RestoreIRQ
 
 	sei
 
@@ -389,6 +398,9 @@ basicstub:
 
 	sta MMU_CR
 
+	lda LockFlag
+	sta LOCKS
+
 	cli
 
 	jsr WaitKeyboardRelease
@@ -401,6 +413,52 @@ basicstub:
 	lda #$00
 	sta INP_NDX
 
+	rts
+.endproc
+
+.proc IRQHandler
+	; Switch to our editor config with hi kernel enabled
+	sta MMU_LOAD_CRD
+
+	cld
+
+	inc $0400
+
+@SkipBCD:
+	pla
+	sta MMU_LOAD_CR
+	pla
+	tay
+	pla
+	tax
+	pla
+	rti
+.endproc
+
+.proc InstallIRQ
+	lda $0314
+	sta IRQVector
+	lda $0315
+	sta IRQVector HI
+
+	; TODO: IRQ handler not working properly
+	rts
+
+	sei
+
+	SetPointer IRQHandler, $0314
+
+	cli
+	rts
+.endproc
+
+.proc RestoreIRQ
+	sei
+	lda IRQVector
+	sta $0314
+	lda IRQVector HI
+	sta $0315
+	cli
 	rts
 .endproc
 
@@ -538,6 +596,9 @@ ZPSafe: .res $10,0
 ScreenCol: .byte $00, $00
 RelocationFlag: .byte $00
 MainExitFlag: .byte 0
+LockFlag: .byte 0
+
+IRQVector: .word 0
 
 ; Address of the entry stub. This is only the initialization
 ; part which will move the main application up to MAIN_APP_BASE
@@ -957,13 +1018,7 @@ MAIN_APPLICATION = *
 	sty EditCursorY
 	jsr HideCursor
 
-	clc
-	lda CURSOR_LINE
-	adc #SCREEN_COLUMNS
-	sta CURSOR_LINE
-	lda CURSOR_LINE HI
-	adc #$00
-	sta CURSOR_LINE HI
+	jsr NextCursorLine
 
 	; Go to next line
 	clc
@@ -989,13 +1044,7 @@ MAIN_APPLICATION = *
 	sty EditCursorY
 	jsr HideCursor
 
-	sec
-	lda CURSOR_LINE
-	sbc #SCREEN_COLUMNS
-	sta CURSOR_LINE
-	lda CURSOR_LINE HI
-	sbc #$00
-	sta CURSOR_LINE HI
+	jsr PrevCursorLine
 
 	; Go to previous line
 	sec
@@ -1194,23 +1243,11 @@ MAIN_APPLICATION = *
 	SetPointer CURSOR_HOME_POS, CONSOLE_PTR
 
 	; Calculate the bottom line
-	ldx EditLines			; Backward linecount
-	dex
-	stx Multiplicand
-	lda #$00
-	sta Multiplicand HI
-	sta Multiplier HI
-	lda #SCREEN_COLUMNS
-	sta Multiplier
-	jsr Mult16x16
-
-	clc
-	lda #<(CURSOR_HOME_POS)
-	adc Product
-	sta MEMCPY_TGT
-	lda #>(CURSOR_HOME_POS)
-	adc Product HI
-	sta MEMCPY_TGT HI
+	ldy EditLines
+	dey
+	lda #>MEMCPY_TGT
+	ldx #<MEMCPY_TGT
+	jsr SetCursorLine
 
 	ldx EditLines			; Backward linecount
 	dex
@@ -1346,14 +1383,7 @@ MAIN_APPLICATION = *
 
 @LineLoop:
 	jsr DeleteColumnPixel
-
-	clc
-	lda CURSOR_LINE
-	adc #SCREEN_COLUMNS
-	sta CURSOR_LINE
-	lda CURSOR_LINE HI
-	adc #$00
-	sta CURSOR_LINE HI
+	jsr NextCursorLine
 
 	dex
 	bpl @LineLoop
@@ -1442,14 +1472,7 @@ MAIN_APPLICATION = *
 
 @LineLoop:
 	jsr InsertColumnPixel
-
-	clc
-	lda CURSOR_LINE
-	adc #SCREEN_COLUMNS
-	sta CURSOR_LINE
-	lda CURSOR_LINE HI
-	adc #$00
-	sta CURSOR_LINE HI
+	jsr NextCursorLine
 
 	dex
 	bpl @LineLoop
@@ -1484,6 +1507,108 @@ MAIN_APPLICATION = *
 	sta (CURSOR_LINE),y
 
 	rts
+.endproc
+
+.proc InsertLine
+	jsr HideCursor
+	jsr SetDirty
+
+	; Bottom line
+	ldy EditLines
+	dey
+	lda #>MEMCPY_SRC
+	ldx #<MEMCPY_SRC
+	jsr SetCursorLine
+
+	ldx EditLines
+	dex
+	jmp @EnterLoop
+
+@NextLine:
+	ldy EditColumns
+	dey
+
+@CopyLine:
+	; Copy the line to the next one
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @CopyLine
+
+	dex
+	cpx EditCursorY
+	beq @ClearCursorLine
+
+	; Previous line as we need to copy backward
+	SubWord SCREEN_COLUMNS, MEMCPY_SRC
+
+@EnterLoop:
+	AddWordTgt SCREEN_COLUMNS, MEMCPY_SRC, MEMCPY_TGT
+	jmp @NextLine
+
+@ClearCursorLine:
+	lda #'.'
+	ldy EditColumns
+	dey
+
+@ClearLine:
+	sta (CURSOR_LINE),y
+	dey
+	bpl @ClearLine
+
+	jsr GridToMem
+	jmp ShowCursor
+.endproc
+
+.proc DeleteLine
+	jsr HideCursor
+	jsr SetDirty
+
+	; We copy into the current cursor line
+	lda CURSOR_LINE
+	sta MEMCPY_TGT
+	lda CURSOR_LINE HI
+	sta MEMCPY_TGT HI
+
+	ldx EditCursorY
+	jmp @EnterLoop
+
+@NextLine:
+	ldy EditColumns
+	dey
+
+@CopyLine:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @CopyLine
+
+	inx
+	cpx EditLines
+	beq @ClearLastLine
+
+	lda MEMCPY_SRC
+	sta MEMCPY_TGT
+	lda MEMCPY_SRC HI
+	sta MEMCPY_TGT HI
+
+@EnterLoop:
+
+	AddWordTgt SCREEN_COLUMNS, MEMCPY_TGT, MEMCPY_SRC
+	jmp @NextLine
+
+@ClearLastLine:
+	lda #'.'
+	ldy EditColumns
+	dey
+
+@ClearLine:
+	sta (MEMCPY_TGT),y
+	dey
+	bpl @ClearLine
+
+	jsr GridToMem
+	jmp ShowCursor
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -1737,6 +1862,69 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR HI
 	sbc	#$00
 	sta CONSOLE_PTR HI
+
+	rts
+.endproc
+
+.proc NextCursorLine
+	clc
+	lda CURSOR_LINE
+	adc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+
+	lda	CURSOR_LINE HI
+	adc #0
+	sta CURSOR_LINE HI
+
+	rts
+.endproc
+
+.proc PrevCursorLine
+	sec
+	lda CURSOR_LINE
+	sbc #SCREEN_COLUMNS
+	sta CURSOR_LINE
+
+	lda CURSOR_LINE HI
+	sbc	#$00
+	sta CURSOR_LINE HI
+
+	rts
+.endproc
+
+; Calculate the cursor line 
+;
+; PARAMS:
+;	A - PTR HI		Where the result is stored
+;   X - PTR LO
+; 	Y - Cursor line 1..N
+;
+; RETURNS:
+; The address of the cursor line in the given pointer
+; 
+.proc SetCursorLine
+	dey
+	sty Multiplicand
+
+	stx DATA_PTR
+	sta DATA_PTR HI
+
+	lda #$00
+	tay
+	sta Multiplicand HI
+	sta Multiplier HI
+	lda #SCREEN_COLUMNS
+	sta Multiplier
+	jsr Mult16x16
+
+	clc
+	lda #<(CURSOR_HOME_POS)
+	adc Product
+	sta (DATA_PTR),y
+	lda #>(CURSOR_HOME_POS)
+	adc Product HI
+	iny
+	sta (DATA_PTR),y
 
 	rts
 .endproc
@@ -3494,7 +3682,6 @@ MAIN_APPLICATION = *
 	dec MaxFrame
 	jsr MoveCursorHome
 	jsr UpdateFrameEditor
-	jsr Delay				; Show the DONE text
 	jmp ClearStatusLines
 
 @Cancel:
@@ -3697,6 +3884,8 @@ KEYMAP_SIZE = 5
 ;	Space key + RIGHT SHIFT only will trigger
 ;	DefineKey KEY_SHIFT_RIGHT, $20, Function
 SpriteEditorKeyMap:
+	DefineKey KEY_COMMODORE, $94, REPEAT_KEY, DeleteLine			; CMDR-DEL
+
 	DefineKey 0, $20, REPEAT_KEY,    ToggleGridPixel				; SPACE
 	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
@@ -3729,20 +3918,21 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteRange			; SHIFT-D
 	DefineKey KEY_SHIFT, $C6, NO_REPEAT_KEY, FlipHorizontal			; SHIFT-F
 	DefineKey KEY_SHIFT, $94, REPEAT_KEY,    InsertColumn			; INS
-	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
 	DefineKey KEY_SHIFT, $93, NO_REPEAT_KEY, ClearGridHome			; CLEAR
-
-	; CONTROL keys
-	DefineKey KEY_CTRL, $0e, NO_REPEAT_KEY, InsertCopyFrame			; CTRL-N
-	DefineKey KEY_CTRL, $a0, REPEAT_KEY, DeleteColumns				; CTRL-DEL
+	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
+	DefineKey KEY_SHIFT|KEY_COMMODORE, $94, REPEAT_KEY, InsertLine	; CMDR-INS
 
 	; COMMODORE keys
 	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; CMDR-N
-
 	DefineKey KEY_COMMODORE, $b3, REPEAT_KEY, ShiftGridUp			; CMDR-W
 	DefineKey KEY_COMMODORE, $ae, REPEAT_KEY, ShiftGridDown			; CMDR-S
 	DefineKey KEY_COMMODORE, $b0, REPEAT_KEY, ShiftGridLeft			; CMDR-A
 	DefineKey KEY_COMMODORE, $ac, REPEAT_KEY, ShiftGridRight		; CMDR-D
+	DefineKey KEY_COMMODORE, $94, REPEAT_KEY, DeleteLine			; CMDR-DEL
+
+	; CONTROL keys
+	DefineKey KEY_CTRL, $0e, NO_REPEAT_KEY, InsertCopyFrame			; CTRL-N
+	DefineKey KEY_CTRL, $a0, REPEAT_KEY, DeleteColumns				; CTRL-DEL
 
 	; Extended keys
 	DefineKey KEY_EXT, $1d, REPEAT_KEY,      MoveCursorRight		; CRSR-Right/Keypad

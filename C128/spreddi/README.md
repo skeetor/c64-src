@@ -30,10 +30,10 @@ These keys work in all editor modes<br><br>
 <b>CMDR N</b> - Append current frame at end (Copy)<br>
 <b>CTRL N</b> - Insert copy of current frame at current position (Insert copy)<br>
 <b>DEL</b> - Delete Column on current line<br>
-<b>*CMDR DEL</b> - Delete line<br>
+<b>CMDR DEL</b> - Delete line<br>
 <b>CTRL DEL</b> - Delete columns on all lines<br>
 <b>INS</b> - Insert column on current line<br>
-<b>*CMDR INS</b> - Insert line<br>
+<b>CMDR INS</b> - Insert line<br>
 <b>CTRL INS</b> - Insert columns on all lines<br>
 <b>S</b> - Save File (Ask for overwriting if file exists needs to be done)<br>
 <b>M</b> - Multicolor<br>
@@ -72,12 +72,15 @@ These keys work in all editor modes<br><br>
 * none<br>
 
 
-### <u><b>TODO:</b></u><br><br>
-
+### <u><b>Planned features and ideas</b></u><br><br>
+This section contains features and stuff for improvment. That does not mean that everything will be implemented, but at least I don't want to forget about it, so it is mentioned here until I can investigate it.<br>
+The order doesn't reflect the priority :)<br>>
+Port to C64<br>
+Port to MEGA65<br>
 Refactor DrawGridMatrix seperate frameborder<br>
 Use .bss segment to remove uninitialized bytes from binary<br>
 Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
 NoRepeat keys no longer working<br>
 Mousesupport<br>
 Discmenu<br>
-Big spritepreview, show 2x2 sprites <br>
+Big spritepreview, show 2x2 sprites<br>

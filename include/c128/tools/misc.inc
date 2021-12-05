@@ -24,4 +24,32 @@ _TOOLS_INC = 1
 		sta     PointerTgt HI
 .endmacro
 
+.macro AddWordTgt Value, SrcAddress, TgtAddress
+	clc
+	lda SrcAddress
+	adc #<Value
+	sta TgtAddress
+	lda SrcAddress+1
+	adc #>Value
+	sta TgtAddress+1
+.endmacro
+
+.macro AddWord Value, Address
+	AddWordTgt Value, Address, Address
+.endmacro
+
+.macro SubWordTgt Value, SrcAddress, TgtAddress
+	sec
+	lda SrcAddress
+	sbc #<Value
+	sta TgtAddress
+	lda SrcAddress+1
+	sbc #>Value
+	sta TgtAddress+1
+.endmacro
+
+.macro SubWord Value, Address
+	SubWordTgt Value, Address, Address
+.endmacro
+
 .endif	; _TOOLS_INC
