@@ -16,9 +16,8 @@ These keys work in all editor modes<br><br>
 ### <u><b>Sprite editor</b></u><br>
 
 <b>C</b> - Copy from frame N to current<br>
-<b>D</b> - Clear grid<br>
-<b>SHIFT D</b> - Delete current frame<br>
-<b>CONTROL D</b> - Delete frame N..M<br>
+<b>D</b> - Delete current frame<br>
+<b>SHIFT D</b> - Delete frame N..M<br>
 <b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>F</b> - Flip vertically<br>
@@ -57,6 +56,7 @@ These keys work in all editor modes<br><br>
 <b>CMDR S</b> - Shift grid down<br>
 <b>CMDR D</b> - Shift grid right<br>
 <b>HOME</b> - Cursor to top first pixel<br>
+<b>CLEAR</b> - Clear grid<br>
 <b>1</b> - Cycle Spritecolor 1<br>
 <b>2</b> - Cycle Spritecolor 2 &lt;Multicolor&gt;<br>
 <b>3</b> - Cycle Spritecolor 3 &lt;Multicolor&gt;<br>

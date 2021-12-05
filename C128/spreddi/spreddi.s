@@ -3702,7 +3702,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
-	DefineKey 0, $44, NO_REPEAT_KEY, ClearGridHome					; D
+	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
 	DefineKey 0, $14, REPEAT_KEY,    DeleteColumn					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
 	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
@@ -3726,13 +3726,13 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $9d, REPEAT_KEY,    MoveCursorLeft			; SHIFT CRSR-Right (CRSR-Left)
 	DefineKey KEY_SHIFT, $91, REPEAT_KEY,    MoveCursorUp			; SHIFT CRSR-Down (CRSR-Up)
 	DefineKey KEY_SHIFT, $ce, NO_REPEAT_KEY, InsertEmptyFrame		; SHIFT-N
-	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteCurrentFrame		; SHIFT-D
+	DefineKey KEY_SHIFT, $c4, NO_REPEAT_KEY, DeleteRange			; SHIFT-D
 	DefineKey KEY_SHIFT, $C6, NO_REPEAT_KEY, FlipHorizontal			; SHIFT-F
 	DefineKey KEY_SHIFT, $94, REPEAT_KEY,    InsertColumn			; INS
 	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
+	DefineKey KEY_SHIFT, $93, NO_REPEAT_KEY, ClearGridHome			; CLEAR
 
 	; CONTROL keys
-	DefineKey KEY_CTRL, $04, NO_REPEAT_KEY, DeleteRange				; CTRL-D
 	DefineKey KEY_CTRL, $0e, NO_REPEAT_KEY, InsertCopyFrame			; CTRL-N
 	DefineKey KEY_CTRL, $a0, REPEAT_KEY, DeleteColumns				; CTRL-DEL
 
