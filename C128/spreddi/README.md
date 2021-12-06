@@ -1,23 +1,25 @@
-# Sprite, character and screen editor for the C128
-
-When the editor asks you to enter a value, you can always cancel the operation by pressing RUN/STOP to return to the editor
+# Sprite, character and screen editor for the C128<br>
 <br>
+When the editor asks you to enter a value, you can always cancel the operation by pressing RUN/STOP to return to the editor<br>
 <br>
 <br>
 <b>Keys (* = not implemented)</b><br>
 <br>
-### <u><b>Common editor keys</b></u><br><br>
 
-These keys work in all editor modes<br><br>
+### <u><b>Common editor keys</b></u><br>
+<br>
+These keys work in all editor modes<br>
+<br>
 <b>*F1</b> - Sprite editor mode<br>
 <b>*F3</b> - Character editor mode<br>
 <b>*F5</b> - Screen editor mode<br>
+<br>
 
-### <u><b>Sprite editor</b></u><br>
-
+### <b><u>Sprite editor</u></b><br>
+<br>
 <b>C</b> - Copy from frame N to current<br>
 <b>D</b> - Delete current frame<br>
-<b>SHIFT D</b> - Delete frame N..M<br>
+<b>*SHIFT D</b> - Delete frame N..M (Make 7 frames, goto fr.5, del 1-1, cursor in wrong place<br>
 <b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>F</b> - Flip vertically<br>
@@ -30,7 +32,7 @@ These keys work in all editor modes<br><br>
 <b>CMDR N</b> - Append current frame at end (Copy)<br>
 <b>CTRL N</b> - Insert copy of current frame at current position (Insert copy)<br>
 <b>DEL</b> - Delete Column on current line<br>
-<b>CMDR DEL</b> - Delete line<br>
+<b>CMDR DEL</b> - Delete line (INS)<br>
 <b>CTRL DEL</b> - Delete columns on all lines<br>
 <b>INS</b> - Insert column on current line<br>
 <b>CMDR INS</b> - Insert line<br>
@@ -60,27 +62,38 @@ These keys work in all editor modes<br><br>
 <b>1</b> - Cycle Spritecolor 1<br>
 <b>2</b> - Cycle Spritecolor 2 &lt;Multicolor&gt;<br>
 <b>3</b> - Cycle Spritecolor 3 &lt;Multicolor&gt;<br>
+<br>
+### <u><b>Character editor</b></u><br>
+<br>
+* Save font<br>
+* Load font<br>
+* Rotate 90 (left/right)<br>
+<br>
 
-### <u><b>Character editor</b></u><br><br>
+### <u><b>Screen editor</b></u>
+<br>
+* TBD<br>
+<br>
+<br>
 
-* Save font
-* Load font
-* Rotate 90 (left/right)
+### <u><b>Possible features and improvments</b></u><br>
+<br>
 
-### <u><b>Screen editor</b></u><br><br>
+    This section contains features and stuff for improvment. That does not mean that everything will be implemented, but at least I don't want to forget about it, so it is mentioned here until I can investigate it.
 
-* none<br>
+    The order doesn't reflect the priority :)
+<br>
 
 
-### <u><b>Planned features and ideas</b></u><br><br>
-This section contains features and stuff for improvment. That does not mean that everything will be implemented, but at least I don't want to forget about it, so it is mentioned here until I can investigate it.<br>
-The order doesn't reflect the priority :)<br>>
-Port to C64<br>
-Port to MEGA65<br>
-Refactor DrawGridMatrix seperate frameborder<br>
-Use .bss segment to remove uninitialized bytes from binary<br>
-Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
-NoRepeat keys no longer working<br>
-Mousesupport<br>
-Discmenu<br>
-Big spritepreview, show 2x2 sprites<br>
+* Refactor DrawGridMatrix seperate frameborder<br>
+* Port to C64<br>
+* Port to MEGA65<br>
+* Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
+* Mousesupport<br>
+* Discmenu<br>
+* Big spritepreview, show 2x2 sprites<br>
+* Animation preview (forward/backward/cycle/etc.)<br>
+
+* <s>Refactor keyboard functions to use Carry mechanism</s><br>
+* Use .bss segment to remove uninitialized bytes from * binary<br>
+* <s>NoRepeat keys no longer working</s><br>

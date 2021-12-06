@@ -2,6 +2,8 @@
 ; And convert it to a PETSCII code. This will not
 ; support multiple keys being pressed at the same
 ; time.
+; The caller should have called ScanKeys or provide
+; appropriate key data values to simulate a keypress.
 ;
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
@@ -35,14 +37,13 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 
 .proc TranslateKey
 	; The caller should have already called ScanKeys
-	;jsr ScanKeys
 
 	jsr CheckModifier
 
 	; Show hex value of the keycode + modifier at
 	; the bottom of the screen if enabled.
-.if 1
-	.out "[readkey.s] Debug output of keycodes activated"
+.ifdef KEYBOARD_DEBUG_PRINT
+	.warning "[TranslateKey] Debug output of keycodes activated"
 	jsr EvaluateKeyTable
 
 	lda CONSOLE_PTR
@@ -244,7 +245,8 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 	rts
 .endproc
 
-.include "kbd/scankeys.s"
+; This is only needed to provide the Keyline buffer
+;.include "kbd/scankeys.s"
 
 ;.segment "DATA"
 

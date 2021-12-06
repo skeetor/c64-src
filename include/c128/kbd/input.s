@@ -1,7 +1,7 @@
 ; Input a string on the screen. The function
-; returns when CR is pressed with AC is 1 (OK).
+; returns when CR is pressed carry is clear (OK).
 ; If ESC is pressed, the function returns
-; with AC = 0 (CANCEL).
+; with carry set (CANCEL).
 ; Y - returns the length
 ;
 ; PARAMS:
@@ -16,10 +16,10 @@
 ; A = 1 (OK)
 ; Y = Length of input string.
 ;
-; The caller can set the pointer CharFilterPtr
+; The caller can set the pointer InputFilterPtr
 ; to a function which can check KeyCode/KeyModifier
 ; to filter individual keys. If this function returns
-; Y = 1 the key was accepted and will be entered
+; with carry clear, the key was accepted and will be entered
 ; into the string, otherwise the key is ignored.
 ; Note that this can not change the behavior of
 ; CRSR, RUN/STOP, DEL and ENTER keys as those are
@@ -78,8 +78,8 @@ EMPTY_CHAR		= 100	; '_'
 	cpy InputMaxLen
 	bgt :+
 	dey
-
-:	; Show the cursor
+:
+	; Show the cursor
 	lda (CONSOLE_PTR),y
 	eor #$80
 	sta (CONSOLE_PTR),y
@@ -102,8 +102,8 @@ EMPTY_CHAR		= 100	; '_'
 	inx					; New Cursorpos
 	jsr InputMoveCursorRight
 	jmp @KeyLoop
-
-:	cmp #$9d			; CRSR-Left
+:
+	cmp #$9d			; CRSR-Left
 	bne :+
 	tay
 	lda KeyModifier
@@ -120,8 +120,8 @@ EMPTY_CHAR		= 100	; '_'
 	dex					; New Cursorpos
 	jsr InputMoveCursorLeft
 	jmp @KeyLoop
-
-:	cmp #$03			; RUN-STOP
+:
+	cmp #$03			; RUN-STOP
 	bne :+
 
 	ldy InputCursorPos
@@ -129,11 +129,11 @@ EMPTY_CHAR		= 100	; '_'
 	eor #$80
 	sta (CONSOLE_PTR),y
 
-	lda #$00
 	ldy InputCurLen
+	sec
 	rts
-
-:	cmp #$0d			; ENTER
+:
+	cmp #$0d			; ENTER
 	bne :+
 
 	ldy InputCursorPos
@@ -141,36 +141,33 @@ EMPTY_CHAR		= 100	; '_'
 	eor #$80
 	sta (CONSOLE_PTR),y
 
-	lda #$01
 	ldy InputCurLen
+	clc
 	rts
-
-:	cmp #$14			; DEL
+:
+	cmp #$14			; DEL
 	bne :+
 
 	; If the cursor is at the start
 	; we can't delete anymore.
 	jsr InputDeleteCharacter
 	jmp @KeyLoop
-
-:	cmp #$94			; INSERT
+:
+	cmp #$94			; INSERT
 	bne :+
 	jsr InputInsertCharacter
 	jmp @KeyLoop
-
-:	sta InputTmp
-	phr :+
-	lda InputTmp
-	jmp (InputFilterPtr)
-
-:	cpy #$01
-	lbne @KeyLoop
-
+:
+	bcc :+
+	jmp @KeyLoop
+:
 	; Add PETSCII character to string
 	jsr InputAddCharacter
 	jmp @KeyLoop
+.endproc
 
-	rts
+.proc CallKeyboardFilter
+	jmp (InputFilterPtr)
 .endproc
 
 ;------------------------------------------------
@@ -276,12 +273,12 @@ InputMoveCursorLeft:
 	blt :+
 	cmp #$8c
 	ble @Skip
-
-:	ldy #$01
+:
+	clc
 	rts
 
 @Skip:
-	ldy #$00
+	sec
 	rts
 .endproc
 

@@ -10,7 +10,9 @@
 .include "tools/misc.inc"
 .include "tools/intrinsics.inc"
 
+; Debug defines
 ;SHOW_DEBUG_SPRITE  = 1
+KEYBOARD_DEBUG_PRINT = 1
 
 ; Zeropage variables
 CONSOLE_PTR			= SCREEN_PTR	; $e0
@@ -176,13 +178,13 @@ basicstub:
 	jsr CreateDebugSprite
 .endif
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(SCREEN_LINES+1)), CONSOLE_PTR
 	SetPointer VersionTxt, STRING_PTR
 	ldy #2
 	jsr PrintStringZ
 
 @KeyLoop:
-	bit EditorWaitRelease
+	bit KeyMapWaitRelease
 	bmi @WaitKey
 
 @WaitRelease:
@@ -201,7 +203,7 @@ basicstub:
 	bne @Exit
 
 @ExecKey:
-	jsr KeyboardTrampolin
+	jsr CallKeyboard
 	jmp @KeyLoop
 
 @Exit:
@@ -323,7 +325,7 @@ basicstub:
 
 	SetPointer MAIN_APPLICATION_LEN, MEMCPY_LEN
 	SetPointer (MAIN_APPLICATION_LOAD+MAIN_APPLICATION_LEN), MEMCPY_SRC
-	SetPointer MAIN_APPLICATION_END, MEMCPY_TGT
+	SetPointer (MAIN_APPLICATION+MAIN_APPLICATION_LEN), MEMCPY_TGT
 
 	jsr MemCopyReverse
 	lda #$01
@@ -387,17 +389,6 @@ basicstub:
 	dey
 	bpl @ZPRestore
 
-	; Restore MMU registers
-	ldy #$0a
-
-@MMURestore:
-	lda MMUConfig,y
-	sta MMU_CR_IO,Y
-	dey
-	bpl @MMURestore
-
-	sta MMU_CR
-
 	lda LockFlag
 	sta LOCKS
 
@@ -412,6 +403,17 @@ basicstub:
 	; Clear keybuffer
 	lda #$00
 	sta INP_NDX
+
+	; Restore MMU registers
+	ldy #$0a
+
+@MMURestore:
+	lda MMUConfig,y
+	sta MMU_CR_IO,Y
+	dey
+	bpl @MMURestore
+
+	sta MMU_CR
 
 	rts
 .endproc
@@ -678,96 +680,13 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc KeyboardTrampolin
+.proc CallKeyboard
 	jmp (EditorKeyHandler)
 .endproc
 
 .proc EditorKeyboardHandler
 	jsr ReadKeyRepeat
-.endproc
-
-; We loop through the keymap and check if there is an entry
-; which matches the Modifierand KeyCode. If such an entry is
-; found, the associated keyhandler is executed.
-;
-; The SHIFT key is handled in a special way. If KEY_SHIFT
-; is set, we ignore KEY_SHIFT_LEFT or KEY_SHIFT_RIGHT
-; as this means that any SHIFT key is allowed to be pressed.
-; If KEY_SHIFT is not set, then it must also match exactly. 
-.proc CheckKeyMap
-
-	lda KeyMapBasePtr
-	sta KEYMAP_PTR
-	lda KeyMapBasePtr+1
-	sta KEYMAP_PTR HI
-
-	; Remove the KEY_SHIFT flag so we can properly compare
-	; against the SHIFT_LEFT/RIGHT flags.
-	lda KeyModifier
-	and #$ff ^ KEY_SHIFT
-	sta KeyMapModifier
-
-@CheckKeyLoop:
-	ldy #0
-	lda (KEYMAP_PTR),y
-
-	tsx
-	pha
-	and #KEY_SHIFT
-	beq @CheckModifier
-
-	; If the modifier has the SHIFT key set
-	; We can ignore the LEFT or RIGHT flags.
-	lda $0100,x
-	and #$ff ^ KEY_SHIFT
-	sta $0100,x				; Save the modifiers without the SHIFT flags
-	lda KeyMapModifier	; Original modifiers ...
-	and #(KEY_SHIFT_LEFT|KEY_SHIFT_RIGHT) ; .. and extract the shift states
-	ora $0100,x				; Add the shift keys from the actual key
-	sta $0100,x				; push the required shift states.
-
-@CheckModifier:
-	pla
-	cmp KeyMapModifier
-	bne @NextKey
-
-@CheckKey:
-	iny
-	lda (KEYMAP_PTR),y
-	cmp KeyCode
-	bne @NextKey
-
-	; We found a valid key combination, so we execute
-	; the handler.
-	ldy #$02
-	lda (KEYMAP_PTR),y
-	sta EditorWaitRelease
-	iny
-	lda (KEYMAP_PTR),y
-	sta KeyMapFunction
-	iny
-	lda (KEYMAP_PTR),y
-	sta KeyMapFunction+1
-	jmp (KeyMapFunction)
-
-@NextKey:
-	clc
-	lda KEYMAP_PTR
-	adc #KEYMAP_SIZE
-	sta KEYMAP_PTR
-	lda KEYMAP_PTR HI
-	adc #$00
-	sta KEYMAP_PTR HI
-
-	; If the functionpointer is a nullptr we have reached the end of the map.
-	ldy #$03
-	lda (KEYMAP_PTR),y
-	bne @CheckKeyLoop
-	iny
-	lda (KEYMAP_PTR),y
-	bne @CheckKeyLoop
-	rts
-
+	jmp CheckKeyMap
 .endproc
 
 .proc Flash
@@ -1593,7 +1512,6 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT HI
 
 @EnterLoop:
-
 	AddWordTgt SCREEN_COLUMNS, MEMCPY_TGT, MEMCPY_SRC
 	jmp @NextLine
 
@@ -2222,8 +2140,8 @@ MAIN_APPLICATION = *
 	dey
 	bpl @Loop
 
-	jmp DrawBitMatrix
-
+	jsr DrawBitMatrix
+	jmp ShowCursor
 .endproc
 
 .proc NextFrame
@@ -2253,7 +2171,15 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc GotoFrame
+	lda MaxFrame
+	bne :+
+
+	jsr Flash
+	rts
+:
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #$00
+	jsr ClearLine
 
 	; We don't want a default value here, as we can not know
 	; where the user wants to jump to, and it is annoying to
@@ -2265,7 +2191,10 @@ MAIN_APPLICATION = *
 	lda CurFrame
 	ldy #$00
 	jsr EnterFrameNumber
-	cpy #$00
+	bcs @Cancel
+
+	; Already there
+	cmp CurFrame
 	beq @Cancel
 
 	; Frame number we go to.
@@ -2282,11 +2211,10 @@ MAIN_APPLICATION = *
 	ldx CurFrame
 	jsr SwitchFrame
 
-	; Clear the input control
-	jmp ClearStatusLines
-
 @Cancel:
-	rts
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	ldy #0
+	jmp ClearLine
 .endproc
 
 .proc DeleteCurrentFrame
@@ -2302,8 +2230,7 @@ MAIN_APPLICATION = *
 	jmp UpdateFrameEditor
 
 @Cancel:
-	jsr Flash
-	rts
+	jmp Flash
 .endproc
 
 .proc DeleteRange
@@ -2312,7 +2239,6 @@ MAIN_APPLICATION = *
 	cmp MaxFrame		; Only one frame?
 	beq @Cancel			; Nothing to delete
 :
-
 	jsr SaveDirty
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
@@ -2334,8 +2260,7 @@ MAIN_APPLICATION = *
 	sta FrameNumberEndHi
 	; Y - End of delete string
 	jsr EnterFrameNumbers
-	cmp #$00
-	beq @Done
+	bcs @Done
 
 	ldx FrameNumberStart
 	lda FrameNumberEnd
@@ -2415,7 +2340,7 @@ MAIN_APPLICATION = *
 
 .proc CopyFromFrame
 	lda MaxFrame
-	beq @Cancel
+	beq @Error
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 
@@ -2430,8 +2355,7 @@ MAIN_APPLICATION = *
 :	txa
 	ldy #$00
 	jsr EnterFrameNumber
-	cpy #$00
-	beq @Cancel
+	bcs @Cancel
 
 	; Copy to itself doesn't make sense
 	cmp CurFrame
@@ -2442,14 +2366,17 @@ MAIN_APPLICATION = *
 	ldy #$00
 	jsr CopySpriteFrame
 
+	jsr UpdateFrameEditor
+
+@Cancel:
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	ldy #0
 	jsr ClearLine
-
-	jmp UpdateFrameEditor
-
-@Cancel:
 	rts
+
+@Error:
+	jsr Flash
+	jmp @Cancel
 .endproc
 
 ; Append a new frame at the end and copy the current
@@ -2557,7 +2484,6 @@ MAIN_APPLICATION = *
 ; RETURN: -
 .proc SwitchFrame
 	sty CurFrame
-
 	jsr SaveDirty
 	jmp UpdateFrameEditor
 .endproc
@@ -2577,8 +2503,8 @@ MAIN_APPLICATION = *
 ; A - Source frame
 ; X - Target frame
 ; Y - 0 = Normal copy
-;     SPRITE_PREVIEW_SRC - Copy sprite from preview to target
-;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
+;     SPRITE_PREVIEW_SRC(1) - Copy sprite from preview to target
+;     SPRITE_PREVIEW_TGT(2) - Copy sprite from source to preview
 ;
 ; If Y is not 0, the value in A or X is ignored
 ; depending on Y. If Y is SPRITE_PREVIEW_SRC then
@@ -2588,9 +2514,10 @@ MAIN_APPLICATION = *
 
 	; Remember the source
 	sta MEMCPY_SRC
-	tya
-	and #SPRITE_PREVIEW_TGT
+	sty CopyFrameFlag
 	beq @CalcTarget
+	cpy #SPRITE_PREVIEW_TGT
+	bne @CalcTarget
 	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_TGT
 	jmp @CheckSrc
 
@@ -2604,9 +2531,10 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT HI
 
 @CheckSrc:
-	tya
-	and #SPRITE_PREVIEW_SRC
+	ldy CopyFrameFlag
 	beq @CalcSrc
+	cpy #SPRITE_PREVIEW_SRC
+	bne @CalcSrc
 	SetPointer SPRITE_PREVIEW_BUFFER, MEMCPY_SRC
 	jmp CopyFrameBuffer
 
@@ -2627,7 +2555,6 @@ MAIN_APPLICATION = *
 .proc CopyFrameBuffer
 	ldy #SPRITE_BUFFER_LEN
 	jmp memcpy255
-
 .endproc
 
 ; Copy a range of frames. The caller is
@@ -3054,25 +2981,24 @@ MAIN_APPLICATION = *
 	sta FrameNumberStartHi
 	sta FrameNumberEndHi
 	jsr EnterFrameNumbers
-	cmp #$00
-	beq @Cancel
+	bcs @Cancel
 
 	ldy #0
 	jsr ClearLine
 
 	; And finally get the filename
 	jsr EnterFilename
-	beq @Cancel
+	bcs @Cancel
 
 	ldy #0
 	jsr ClearLine
 
 	; Everything went ok
-	lda #$01
+	clc
 	rts
 
 @Cancel:
-	lda #$00
+	sec
 	rts
 .endproc
 
@@ -3089,7 +3015,7 @@ MAIN_APPLICATION = *
 ; EnterNumberCurVal		- Current value of lowframe
 ;
 ; RETURN:
-; A - 0 - Cancel
+; Carry - set if canceled
 ; Y - Offset of frame string.
 ; FrameNumberStart
 ; FrameNumberEnd
@@ -3128,8 +3054,7 @@ MAIN_APPLICATION = *
 	ldy MaxFrame
 	iny					; User deals with 1..N
 	jsr EnterNumberValue
-	cpy #1
-	bne @Cancel
+	bcs @Cancel
 	sta FrameNumberStart
 	dec FrameNumberStart	; Back to 0 based
 
@@ -3151,20 +3076,21 @@ MAIN_APPLICATION = *
 	iny
 	tya
 	jsr EnterNumberValue
-	cpy #1
-	bne @Cancel
+	bcs @Cancel
 	sta FrameNumberEnd
 	dec FrameNumberEnd	; Back to 0 based
 
 	; Everything went ok
-	lda #$01
+	clc
 	rts
 
 @Cancel:
-	lda #$00
+	sec
 	rts
 .endproc
 
+; RETURN:
+; Carry - Set if cancled
 .proc EnterFilename
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
 	SetPointer FilenameTxt, STRING_PTR
@@ -3187,9 +3113,7 @@ MAIN_APPLICATION = *
 	ldx FilenameLen
 	ldy #16
 	jsr Input
-
-	cmp #$00
-	beq @Cancel
+	bcs @Cancel
 
 	cpy #$00
 	beq @EmptyFilename
@@ -3205,16 +3129,15 @@ MAIN_APPLICATION = *
 	ldx #8
 	ldy #12
 	jsr EnterNumberValue
-	cpy #1
-	bne @Cancel
+	bcs @Cancel
 	sta DeviceNumber
 
 	; Success
-	lda #$01
+	clc
 	rts
 
 @Cancel:
-	lda #$00
+	sec
 	rts
 
 @EmptyFilename:
@@ -3264,8 +3187,8 @@ MAIN_APPLICATION = *
 ; RETURN:
 ; A - Lobyte of value
 ; X - Hibyte of value
-; Y - 1 (OK) : 0 (CANCEL)
-; If Y != 1 the value in A is undefined and should not be used.
+; Carry - clear (OK) : set (CANCEL)
+; If carry is set the value in A is undefined and should not be used.
 .proc EnterFrameNumber
 	pha
 	SetPointer FrameTxt, STRING_PTR
@@ -3295,12 +3218,13 @@ MAIN_APPLICATION = *
 	ldy MaxFrame
 	iny
 	jsr EnterNumberValue
-	cpy #0
-	beq @Done
+	bcs @Done
 
 	; Back to 0..N-1
 	sec
 	sbc #1
+
+	clc
 
 @Done:
 	rts
@@ -3339,7 +3263,7 @@ MAIN_APPLICATION = *
 ; RETURN:
 ; A - Lobyte of value
 ; X - Hibyte of value
-; Y - 1 (OK) : 0 (CANCEL)
+; Carry - clear (OK) : set (CANCEL)
 ; If Y != 1 the value in A is undefined and should not be used.
 .proc InputNumber
 	SetPointer NumberInputFilter, InputFilterPtr
@@ -3376,8 +3300,7 @@ MAIN_APPLICATION = *
 @SkipPrint:
 	ldy EnterNumberStrLen
 	jsr Input
-	cmp #$00			; User pressed cancel button
-	beq @Cancel
+	bcs @Cancel			; User pressed cancel button
 	cpy #$00			; Empty string was entered
 	beq @RangeError
 
@@ -3394,13 +3317,16 @@ MAIN_APPLICATION = *
 	cmp EnterNumberMaxVal
 	bgt @RangeError
 
-	ldy #1
 	jmp @Done
 
 @Cancel:
-	ldy #0
+	sec
+	bcs @Exit
 
 @Done:
+	clc
+
+@Exit:
 	pha
 	SetPointer DefaultInputFilter, InputFilterPtr
 	pla
@@ -3611,8 +3537,9 @@ MAIN_APPLICATION = *
 	jsr HideCursor
 	jsr WaitKeyboardRelease
 	jsr EnterFilename
-	lbeq @Cancel
-
+	bcc :+
+	jmp @Cancel
+:
 	; Reset to first frame
 	lda #$00
 	sta FrameNumberCur
@@ -3721,11 +3648,17 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+.proc ExportBasicData
+	PAGE_NOP
+	rts
+.endproc
+
 ; Library includes
 SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/keyboard_pressed.s"
 .include "kbd/keyboard_released.s"
 .include "kbd/keyboard_released_modignore.s"
+.include "kbd/keyboard_mapping.s"
 .include "kbd/input.s"
 .include "kbd/number_input_filter.s"
 
@@ -3779,9 +3712,6 @@ EditCurLine: .byte 0
 
 ; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
-; Main loop should wait for keyboard release
-; before next key is read if bit 7 is set.
-EditorWaitRelease: .byte $00
 
 ; Keyboard handling
 LastKeyLine: .res KEY_LINES, $ff
@@ -3819,6 +3749,7 @@ MoveFirstFrame: .byte 0
 MoveLastFrame: .byte 0
 MoveTargetFrame: .byte 0
 MoveDirection: .word 0
+CopyFrameFlag: .word 0
 
 ; Characters to be used for the sprite preview border
 ; on the bottom line. This depends on the size, because
@@ -3857,45 +3788,18 @@ ErrorFileIOTxtLen = (*-ErrorFileIOTxt)-1
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
 
-; This map contains the modifier, keycode and the function to trigger
-KeyMapBasePtr: .word 0
-KeyMapFunction: .word 0
-KeyMapModifier: .byte 0	; Copy of KeyModifier to handle SHIFT flags
-
-.macro  DefineKey	Modifier, Code, Flags, Function
-	.byte Modifier, Code
-	.byte Flags
-	.word Function
-.endmacro
-KEYMAP_SIZE = 5
-
-; NOTE: When defining a key assignment using SHIFT keys we can
-; only use either KEY_SHIFT or KEY_SHIFT_LEFT/KEY_SHIFT_RIGHT.
-; If KEY_SHIFT is set then LEFT/RIGHT is ignored for the comparison.
-;
-; If LEFT/RIGHT is desired it must be defined without the KEY_SHIFT
-; flag to work. LEFT/RIGHT may be used together, but this means the
-; user would really have to press both shift keys to trigger.
-;
-; Example:
-;	Space key + any shift key will trigger
-;	DefineKey KEY_SHIFT, $20, Function
-;
-;	Space key + RIGHT SHIFT only will trigger
-;	DefineKey KEY_SHIFT_RIGHT, $20, Function
 SpriteEditorKeyMap:
-	DefineKey KEY_COMMODORE, $94, REPEAT_KEY, DeleteLine			; CMDR-DEL
-
-	DefineKey 0, $20, REPEAT_KEY,    ToggleGridPixel				; SPACE
 	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
+	DefineKey 0, $20, REPEAT_KEY,    ToggleGridPixel				; SPACE
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
-	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
 	DefineKey 0, $14, REPEAT_KEY,    DeleteColumn					; DEL
 	DefineKey 0, $13, NO_REPEAT_KEY, MoveCursorHome					; HOME
 	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
+	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
+	DefineKey 0, $45, NO_REPEAT_KEY, ExportBasicData				; E
 	DefineKey 0, $46, NO_REPEAT_KEY, FlipVertical					; F
 	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
 	DefineKey 0, $49, NO_REPEAT_KEY, InvertGrid						; I
@@ -3952,7 +3856,8 @@ SpriteEditorKeyMap:
 	DefineKey 0,0,0,0
 
 MaxFrameValue: .word MAX_FRAMES
-
+DEBUGSTRING: .byte "endmarker"
+MAIN_APPLICATION_END = *
 ;====================================================
 .bss
 
@@ -3964,5 +3869,4 @@ SymKeytableCommodore:	.res KeyTableLen
 SymKeytableControl:		.res KeyTableLen
 SymKeytableAlt:			.res KeyTableLen
 
-MAIN_APPLICATION_END = *
 END:

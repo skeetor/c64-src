@@ -26,11 +26,11 @@ _NUMBER_INPUT_FILTER_INC = 1
 	cmp #'9'
 	bgt @Skip
 
-	ldy #$01
+	clc
 	rts
 
 @Skip:
-	ldy #$00
+	sec
 	rts
 .endproc
 

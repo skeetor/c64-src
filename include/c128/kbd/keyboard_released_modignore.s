@@ -15,15 +15,15 @@ _KEYBOARD_RELEASED_MODIGNORE_INC = 1
 ;.segment "CODE"
 
 .proc WaitKeyboardReleaseIgnoreMod
+
+@WaitRelease:
 	jsr ScanKeys
-	dey
-	bne @Done				; No key pressed
+	bcc @Done	; No key pressed
 
 	; Now check if any modifier was pressed.
-
 	ldx #1
 	lda KeyLine,x
-	and #(~$80)&$ff				; LSHIFT
+	and #$80				; LSHIFT
 
 	pha
 	tsx
@@ -33,23 +33,23 @@ _KEYBOARD_RELEASED_MODIGNORE_INC = 1
 
 	ldx #6
 	lda KeyLine,x
-	and #(~$10)&$ff				; RSHIFT
+	and #$10				; RSHIFT
 	ora	$0100,y
 	sta $0100,y
 
 	ldx #7
 	lda KeyLine,x
-	and #(~$24)&$ff				; C= + CTRL
+	and #$24				; C= + CTRL
 	ora	$0100,y
 	sta $0100,y
 
 	ldx #10
 	lda KeyLine,x
-	and #(~$01)&$ff				; ALT
+	and #$01				; ALT
 	ora	$0100,y
 	sta $0100,y
 	pla
-	bne WaitKeyboardReleaseIgnoreMod
+	beq @WaitRelease
 
 @Done:
 	rts

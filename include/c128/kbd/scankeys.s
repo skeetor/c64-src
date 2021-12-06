@@ -30,8 +30,8 @@ _SCANKEYS_INC = 1
 ; If any keys are pressed Y contains #$01
 ;
 ; RETURN:
-; Y - 1 Keys are pressed
-;     0 No keys pressed
+; Carry - set mean keys are pressed
+;         clear mean no keys pressed
 .proc ScanKeys
 
 	lda #$00
@@ -93,6 +93,9 @@ _SCANKEYS_INC = 1
 	cli
 .endif
 
+	lda #$ff
+	clc
+	adc KeyPressed
 	rts
 .endproc
 

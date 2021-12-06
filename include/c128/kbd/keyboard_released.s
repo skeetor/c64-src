@@ -9,8 +9,7 @@ _KEYBOARD_RELEASED_INC = 1
 
 .proc WaitKeyboardRelease
 	jsr ScanKeys
-	lda KeyPressed
-	bne WaitKeyboardRelease
+	bcs WaitKeyboardRelease
 	rts
 .endproc
 

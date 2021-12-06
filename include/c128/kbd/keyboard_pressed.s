@@ -9,8 +9,7 @@ _KEYBOARD_PRESSED_INC = 1
 
 .proc WaitKeyboardPressed
 	jsr ScanKeys
-	lda KeyPressed
-	beq WaitKeyboardPressed
+	bcc WaitKeyboardPressed
 	rts
 .endproc
 

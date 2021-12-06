@@ -52,4 +52,11 @@ _TOOLS_INC = 1
 	SubWordTgt Value, Address, Address
 .endmacro
 
+; This macro can be used as a reminder when nops are
+; inserted to avoid the jmp (abs) bug on page boundaries.
+.macro PAGE_NOP
+	nop
+.warning "nop inserted for jmp (abs) across border page workaround!"
+.endmacro
+
 .endif	; _TOOLS_INC

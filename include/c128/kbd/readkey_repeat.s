@@ -19,8 +19,7 @@ _READKEY_REPEAT_INC = 1
 
 @WaitKeyPress:
 	jsr ScanKeys
-	dey
-	beq @KeyPressed
+	bcs @KeyPressed
 
 @KeyReleased:
 	; Destroy the last keycode and the modifier
