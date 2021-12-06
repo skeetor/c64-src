@@ -176,16 +176,34 @@ basicstub:
 
 .ifdef SHOW_DEBUG_SPRITE
 	jsr CreateDebugSprite
+.else
+	jsr CreateWelcomeSprite
 .endif
+
+	lda #$ff
+	sta WelcomeDone
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(SCREEN_LINES+1)), CONSOLE_PTR
 	SetPointer VersionTxt, STRING_PTR
 	ldy #2
 	jsr PrintStringZ
 
+	; Wait untile the first key is pressed and
+	; clear the welcome and statusline
+	jsr WaitKeyboardRelease
+	jsr WaitKeyboardPressed
+
+	bit WelcomeDone
+	bpl :+
+	jsr ClearWelcome
+
+	; First key should be processed
+	lda #$ff
+	sta KeyMapWaitRelease
+:
 @KeyLoop:
 	bit KeyMapWaitRelease
-	bmi @WaitKey
+	bmi @SaveKeys
 
 @WaitRelease:
 	; We want to wait until a key is released
@@ -196,7 +214,7 @@ basicstub:
 	; key between multiple inserts.
 	jsr WaitKeyboardReleaseIgnoreMod
 
-@WaitKey:
+@SaveKeys:
 	jsr SaveKeys
 
 	lda MainExitFlag
@@ -251,10 +269,40 @@ basicstub:
 	lda #0					; A - Source frame
 	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
 	jsr CopySpriteFrame
+	jmp DrawBitMatrix
+.endproc
+
+.else ; SHOW_DEBUG_SPRITE
+
+.proc CreateWelcomeSprite
+	ldy #SPRITE_BUFFER_LEN-1
+
+@Loop:
+	lda WelcomeSpriteData,y
+	sta SPRITE_USER_START,y
+	dey
+	bpl @Loop
+
+	lda #0					; A - Source frame
+	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
+	jsr CopySpriteFrame
 	jsr DrawBitMatrix
+	jsr ToggleMulticolor
+	jsr TogglePreviewX
+
+	lda WelcomeColor
+	sta SpriteColorValue
+	jsr SetSpriteColor1
+	lda WelcomeColor+1
+	sta SpriteColorValue+1
+	jsr SetSpriteColor2
+	lda WelcomeColor+2
+	sta SpriteColorValue+2
+	jsr SetSpriteColor3
 
 	rts
 .endproc
+
 .endif ; SHOW_DEBUG_SPRITE
 
 .proc Setup
@@ -341,15 +389,6 @@ basicstub:
 
 	lda #SPRITE_BUFFER_LEN
 	sta Multiplier
-
-	lda	#$00
-	sta Multiplicand
-	sta Multiplicand HI
-	sta Multiplier HI
-	sta Product
-	sta Product HI
-	sta Product+2
-	sta Product+3
 
 	jsr CopyKeytables
 
@@ -620,6 +659,32 @@ MAIN_APPLICATION_LOAD = *
 .org MAIN_APP_BASE
 MAIN_APPLICATION = *
 
+.proc ClearWelcome
+	lda #$00
+	sta WelcomeDone
+
+	lda SpriteColorDefaults
+	sta SpriteColorValue
+	jsr SetSpriteColor1
+	lda SpriteColorDefaults+1
+	sta SpriteColorValue+1
+	jsr SetSpriteColor2
+	lda SpriteColorDefaults+2
+	sta SpriteColorValue+2
+	jsr SetSpriteColor3
+
+	lda	VIC_SPR_MCOLOR
+	and #$ff ^ (1 << SPRITE_PREVIEW)
+	jsr SpriteColorMode
+
+	lda	SPRITE_EXP_Y
+	ora #(1 << SPRITE_PREVIEW)
+	jsr SetPreviewX
+
+	jsr ClearGridHome
+	jmp ClearStatusLines
+.endproc
+
 ; ******************************************
 ; Sprite Editor
 ; ******************************************
@@ -710,6 +775,9 @@ MAIN_APPLICATION = *
 .proc TogglePreviewX
 	lda	SPRITE_EXP_X
 	eor #(1 << SPRITE_PREVIEW)
+.endproc
+
+.proc SetPreviewX
 	sta SPRITE_EXP_X
 	jsr SpritePreviewBorder
 
@@ -719,6 +787,9 @@ MAIN_APPLICATION = *
 .proc TogglePreviewY
 	lda	SPRITE_EXP_Y
 	eor #(1 << SPRITE_PREVIEW)
+.endproc
+
+.proc SetPreviewY
 	sta SPRITE_EXP_Y
 	jsr SpritePreviewBorder
 
@@ -792,10 +863,6 @@ MAIN_APPLICATION = *
 	inx
 	cpx TMP_VAL_1
 	ble @ColorSelection
-
-	jsr SetSpriteColor1
-	jsr SetSpriteColor2
-	jsr SetSpriteColor3
 
 	rts
 .endproc
@@ -2226,7 +2293,7 @@ MAIN_APPLICATION = *
 
 .proc DeleteCurrentFrame
 	lda MaxFrame
-	beq @Cancel		; No more frames
+	beq @Clear		; Only a single frame, so we just delete it.
 
 	lda CurFrame
 	tax
@@ -2236,8 +2303,9 @@ MAIN_APPLICATION = *
 	jsr DeleteFrameRange
 	jmp UpdateFrameEditor
 
-@Cancel:
-	jmp Flash
+@Clear:
+	jsr ClearGridHome
+	jmp ClearStatusLines
 .endproc
 
 .proc DeleteRange
@@ -3704,7 +3772,9 @@ CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
 ColorTxt: .byte "COLOR:",0
 ColorTxtLen = *-ColorTxt-1
-SpriteColorValue: .byte COL_LIGHT_GREY, COL_GREEN, COL_BLUE
+
+WelcomeColor: .byte COL_GREEN, COL_RED, COL_WHITE
+SpriteColorDefaults: .byte COL_LIGHT_GREY, COL_GREEN, COL_BLUE
 
 CanceledTxt:	.byte "           OPERATION CANCELED           ",0
 FilenameTxt:	.byte "FILENAME: ",0
@@ -3726,6 +3796,57 @@ ErrorFileIOTxt: .byte "FILE I/O ERROR",0
 ErrorFileIOTxtLen = (*-ErrorFileIOTxt)-1
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
+
+WelcomeSpriteData:
+.if 0	; HAVE FUN
+	.byte $00, $00, $00
+	.byte $12, $64, $BC
+	.byte $12, $94, $A0
+	.byte $1E, $F4, $B8
+	.byte $12, $93, $20
+	.byte $12, $93, $3C
+	.byte $00, $00, $00
+	.byte $07, $A5, $20
+	.byte $04, $25, $A0
+	.byte $07, $25, $60
+	.byte $04, $25, $20
+	.byte $04, $19, $20
+	.byte $00, $00, $00
+	.byte $00, $00, $00
+	.byte $00, $66, $00
+	.byte $00, $66, $00
+	.byte $02, $00, $40
+	.byte $02, $00, $40
+	.byte $01, $00, $80
+	.byte $00, $FF, $00
+	.byte $00, $00, $00
+	.byte 0
+.endif
+
+; Candle
+	.byte $00, $00, $00
+	.byte $00, $00, $00
+	.byte $00, $02, $00
+	.byte $20, $20, $00
+	.byte $00, $28, $20
+	.byte $00, $38, $00
+	.byte $08, $A8, $00
+	.byte $00, $A0, $00
+	.byte $00, $20, $00
+	.byte $00, $00, $00
+	.byte $00, $54, $00
+	.byte $01, $54, $00
+	.byte $01, $54, $00
+	.byte $01, $54, $00
+	.byte $01, $54, $00
+	.byte $01, $55, $00
+	.byte $01, $55, $00
+	.byte $F1, $55, $4C
+	.byte $3F, $FF, $FC
+	.byte $03, $FF, $C0
+	.byte $00, $00, $00
+	.byte 0
+
 
 SpriteEditorKeyMap:
 	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
@@ -3804,6 +3925,7 @@ BSS_START = *
 
 ; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
+WelcomeDone: .word 0
 
 TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0
@@ -3811,6 +3933,8 @@ TMP_VAL_2: .word 0
 TMP_VAL_3: .word 0
 
 RectangleLineOffset: .byte 0
+
+SpriteColorValue: .byte 0, 0, 0
 
 ; Number of lines/bytes to be printed as bits
 EditFlags:		.byte 0
