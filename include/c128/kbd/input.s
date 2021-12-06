@@ -412,7 +412,6 @@ InputMoveCursorLeft:
 InputCursorPos: .byte 0
 InputCurLen: .byte 0
 InputMaxLen: .byte 0
-InputTmp: .byte 0
 InputFilterPtr:	.word DefaultInputFilter
 
 .endif ; _INPUT_INC

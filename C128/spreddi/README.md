@@ -93,7 +93,9 @@ These keys work in all editor modes<br>
 * Discmenu<br>
 * Big spritepreview, show 2x2 sprites<br>
 * Animation preview (forward/backward/cycle/etc.)<br>
+* Use DATA/BSS segments properly<br>
 
+### <u><b>Done</b></u><br>
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
 * Use .bss segment to remove uninitialized bytes from * binary<br>
 * <s>NoRepeat keys no longer working</s><br>

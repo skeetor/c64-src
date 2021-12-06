@@ -333,6 +333,12 @@ basicstub:
 
 @SkipRelocation:
 
+	BSS_LEN = BSS_END - BSS_START
+	SetPointer BSS_LEN, MEMCPY_LEN
+	SetPointer BSS_START, MEMCPY_TGT
+	lda #$00
+	jsr memset
+
 	lda #SPRITE_BUFFER_LEN
 	sta Multiplier
 
@@ -471,6 +477,7 @@ basicstub:
 .endproc
 
 .include "mem/memcpy.s"
+.include "mem/memset.s"
 
 ; FARCALL is used to call a function
 ; across the bank boundaries.
@@ -3649,7 +3656,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc ExportBasicData
-	PAGE_NOP
+	;PAGE_NOP
 	rts
 .endproc
 
@@ -3678,86 +3685,18 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "devices/writefile.s"
 ; **********************************************
 .segment "DATA"
-
 ;                            1         2         3         4
 ;                  0123456789012345678901234567890123456789
-VersionTxt: .byte "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
-
-TMP_VAL_0: .word 0
-TMP_VAL_1: .word 0
-TMP_VAL_2: .word 0
-TMP_VAL_3: .word 0
-
-RectangleLineOffset: .byte 0
-
-; Number of lines/bytes to be printed as bits
-EditFlags:		.byte 0
-EditColumnBytes: .byte 0
-EditColumns:	.byte 0
-EditLines:		.byte 0
-EditCursorX:	.byte 0
-EditCursorY:	.byte 0
-EditClearPreview: .byte 0	; Clear the preview when the frame is updated if set to 1
-; Size of a framebuffer. 64 for a sprite and 8 for a character
-EditFrameSize: .byte 0
-; Same as EditFrameSize, only it can differ slightly.
-; A sprite is 3*21 = 63 bytes, but the sprite pointer accepts only multiples of 64
-; so this value defines the actual bytelength.
-EditBufferLen:	.byte 0
-
-; Temp for drawing the edit box
-EditCurChar: .byte 0
-EditCurColumns: .byte 0
-EditCurLine: .byte 0
-
-; Functionpointer to the current keyboardhandler
-EditorKeyHandler: .word 0
-
-; Keyboard handling
-LastKeyLine: .res KEY_LINES, $ff
-LastKeyPressed: .byte $ff
-LastKeyPressedLine: .byte $00
+VersionTxt: .byte   "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
 
 ; Saving/Loading
 FilenameDefaultTxt: .byte "spritedata"	; Filename is in PETSCII
 FilenameDefaultTxtLen = *-FilenameDefaultTxt
 
-FrameNumberStart: .byte 0		; first frame input
-FrameNumberEnd: .byte 0			; last frame input
-FrameNumberCur: .byte 0			; current frame
-FramenumberOffset: .byte 0
-
-; Range values for Frame number input
-FrameNumberStartLo: .byte 0
-FrameNumberStartHi: .byte 0
-FrameNumberEndHi: .byte 0
-
 EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberMsgLen = *-EnterNumberMsg
 
-EnterNumberStr: .res 7,0
-EnterNumberStrLen: .byte 0	; Length of the input string
-EnterNumberEmpty: .byte 0	; 1 - InputNumber will not print the current value
-EnterNumberCurVal: .byte 0
-EnterNumberMinVal: .byte 0
-EnterNumberMaxVal: .byte 0
-EnterNumberStringPtr: .word 0
-EnterNumberConsolePtr: .word 0
-
-MoveFrameCnt: .byte 0
-MoveFirstFrame: .byte 0
-MoveLastFrame: .byte 0
-MoveTargetFrame: .byte 0
-MoveDirection: .word 0
-CopyFrameFlag: .word 0
-
-; Characters to be used for the sprite preview border
-; on the bottom line. This depends on the size, because
-; we need to use different chars for the expanded vs.
-; unexpanded Y size on the bottom line.
-LeftBottomRight: .res $03, $00
-
-FramePtr: .word 0	; Address for current frame pointer
+MaxFrameValue: .word MAX_FRAMES
 FrameTxt: .byte "FRAME:  1/  1",0
 FrameTxtOnlyLen = 6
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
@@ -3855,11 +3794,82 @@ SpriteEditorKeyMap:
 	; End of map
 	DefineKey 0,0,0,0
 
-MaxFrameValue: .word MAX_FRAMES
-DEBUGSTRING: .byte "endmarker"
+; The applicaiton data ends here. After that is BSS data which
+; does not need to be initialized and will be set to 0 on startup.
 MAIN_APPLICATION_END = *
 ;====================================================
 .bss
+
+BSS_START = *
+
+; Functionpointer to the current keyboardhandler
+EditorKeyHandler: .word 0
+
+TMP_VAL_0: .word 0
+TMP_VAL_1: .word 0
+TMP_VAL_2: .word 0
+TMP_VAL_3: .word 0
+
+RectangleLineOffset: .byte 0
+
+; Number of lines/bytes to be printed as bits
+EditFlags:		.byte 0
+EditColumnBytes: .byte 0
+EditColumns:	.byte 0
+EditLines:		.byte 0
+EditCursorX:	.byte 0
+EditCursorY:	.byte 0
+EditClearPreview: .byte 0	; Clear the preview when the frame is updated if set to 1
+; Size of a framebuffer. 64 for a sprite and 8 for a character
+EditFrameSize: .byte 0
+; Same as EditFrameSize, only it can differ slightly.
+; A sprite is 3*21 = 63 bytes, but the sprite pointer accepts only multiples of 64
+; so this value defines the actual bytelength.
+EditBufferLen:	.byte 0
+
+; Temp for drawing the edit box
+EditCurChar: .byte 0
+EditCurColumns: .byte 0
+EditCurLine: .byte 0
+
+; Keyboard handling
+LastKeyLine: .res KEY_LINES
+LastKeyPressed: .byte $00
+LastKeyPressedLine: .byte $00
+
+FrameNumberStart: .byte 0		; first frame input
+FrameNumberEnd: .byte 0			; last frame input
+FrameNumberCur: .byte 0			; current frame
+FramenumberOffset: .byte 0
+
+; Range values for Frame number input
+FrameNumberStartLo: .byte 0
+FrameNumberStartHi: .byte 0
+FrameNumberEndHi: .byte 0
+
+EnterNumberStr: .res 7
+EnterNumberStrLen: .byte 0	; Length of the input string
+EnterNumberEmpty: .byte 0	; 1 - InputNumber will not print the current value
+EnterNumberCurVal: .byte 0
+EnterNumberMinVal: .byte 0
+EnterNumberMaxVal: .byte 0
+EnterNumberStringPtr: .word 0
+EnterNumberConsolePtr: .word 0
+
+MoveFrameCnt: .byte 0
+MoveFirstFrame: .byte 0
+MoveLastFrame: .byte 0
+MoveTargetFrame: .byte 0
+MoveDirection: .word 0
+CopyFrameFlag: .word 0
+
+; Characters to be used for the sprite preview border
+; on the bottom line. This depends on the size, because
+; we need to use different chars for the expanded vs.
+; unexpanded Y size on the bottom line.
+LeftBottomRight: .res $03, $00
+
+FramePtr: .word 0	; Address for current frame pointer
 
 ; Decodiertabelle Intern p.359 $FA80
 KeyTableLen = KEY_LINES*8
@@ -3868,5 +3878,6 @@ SymKeytableShift:		.res KeyTableLen
 SymKeytableCommodore:	.res KeyTableLen
 SymKeytableControl:		.res KeyTableLen
 SymKeytableAlt:			.res KeyTableLen
+BSS_END = *
 
 END:

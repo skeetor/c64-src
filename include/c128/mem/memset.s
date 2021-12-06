@@ -1,45 +1,34 @@
 ; MemCopyForward copies memory from startto end.
 ;
 ; PARAM:
+; A - Value
 ; MEMCPY_LEN_HI
 ; MEMCPY_LEN_LO
-; MEMCPY_SRC
 ; MEMCPY_TGT
 ;
-; Written by Gerhard W. Gruber 27.11.2021
+; Written by Gerhard W. Gruber 06.12.2021
 ;
 
-.ifndef _MEMCOPY_FORWARD_INC
-_MEMCOPY_FORWARD_INC = 1
+.ifndef _MEMSET_INC
+_MEMSET_INC = 1
 
 ;.segment "CODE"
 
-.proc MemCopyForward
+.proc memset
 
 	ldy MEMCPY_LEN_LO
-	beq @EnterForward
-
-	ldy #$00
+	beq @MainStart
 
 @SmallLoop:
-	lda (MEMCPY_SRC),y
 	sta (MEMCPY_TGT),y
-	iny
-	cpy MEMCPY_LEN_LO
+	dey
 	bne @SmallLoop
+	sta (MEMCPY_TGT),y
 
-@EnterForward:
+@MainStart:
+	pha
 	lda MEMCPY_LEN_HI
 	beq @Done
-
-	; Adjust to page boundary
-	clc
-	lda MEMCPY_SRC
-	adc MEMCPY_LEN_LO
-	sta MEMCPY_SRC
-	lda MEMCPY_SRC+1
-	adc #$00
-	sta MEMCPY_SRC+1
 
 	clc
 	lda MEMCPY_TGT
@@ -49,23 +38,24 @@ _MEMCOPY_FORWARD_INC = 1
 	adc #$00
 	sta MEMCPY_TGT+1
 
-@CopyPages:
+@MemsetLoop:
 
 	ldy #$00
+	pla
+	pha
 
 @PageLoop:
-	lda (MEMCPY_SRC),y
 	sta (MEMCPY_TGT),y
-	iny
+	dey
 	bne @PageLoop
 
-	inc MEMCPY_SRC+1
 	inc MEMCPY_TGT+1
 	dec MEMCPY_LEN_HI
-	beq @Done
+	bne @MemsetLoop
 
 @Done:
+	pla
 	rts
 .endproc
 
-.endif ; _MEMCOPY_FORWARD_INC
+.endif ; _MEMSET_INC
