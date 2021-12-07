@@ -4,14 +4,15 @@
 ; is closed and carry is set.
 ;
 ; PARAM:
-; A - 'r' for read or 'w' for write
+; A - 'r' for read or 'w' for write, 0 for nothing
 ; X - Devicenumber
 ; Y - Filenumber
 ; DeviceChannel
-; Filename - Filename in PETSCII
+; FILENAME_PTR - Filename in PETSCII
 ; FilenameLen - Length of the filename.
 ;               Note that this may be 0 if i.e. the
 ;               disc status channel is to be opened.
+; FileType - specifies the filetype 'p' = PRG, 's' = SEQ
 ; FilenameBank - (optional) default = 0
 ;
 ; RETURN:
@@ -25,7 +26,8 @@
 .ifndef _OPENFILE_INC
 _OPENFILE_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 .proc OpenFile	; Prepare filename by appending 
 
 	sta OpenMode
@@ -48,23 +50,27 @@ _OPENFILE_INC = 1
 	ldx FilenameBank	; RAM bank of filename
 	jsr SETBANK
 
-	; ',P,W' to open a file for writing
 	ldy FilenameLen
-	beq @NoFilename
+	beq @InitFilename
 
+	; Dont append the filemode
+	lda OpenMode
+	beq @InitFilename
+
+	; Add filetype and mode to the filename
 	lda #','
-	sta Filename,y
+	sta (FILENAME_PTR),y
 	iny
-	lda #'p'
-	sta Filename,y
+	lda FileType
+	sta (FILENAME_PTR),y
 	iny
 	lda #','
-	sta Filename,y
+	sta (FILENAME_PTR),y
 	iny
 	lda OpenMode
-	sta Filename,y
+	sta (FILENAME_PTR),y
 
-@NoFilename:
+@InitFilename:
 	jsr CLRCH
 
 	lda FilenameLen
@@ -76,8 +82,8 @@ _OPENFILE_INC = 1
 @UseFilename:
 	clc
 	adc #4
-	ldx #<(Filename)
-	ldy #>(Filename)
+	ldx FILENAME_PTR
+	ldy FILENAME_PTR HI
 
 @SetFilename:
 	jsr SETNAME
@@ -117,17 +123,25 @@ _OPENFILE_INC = 1
 
 .endproc
 
-.include "devices/closefile.s"
-;.segment "DATA"
+;.pushseg
+;.data
 
-DeviceNumber: .byte 8
 DeviceChannel: .byte 5
+
+;.bss
+DeviceNumber: .byte 0
 OpenMode: .byte 0
+FileType: .byte 0
 FileNumber: .byte 0
 FilenameBank: .byte 0
 FilenameLen: .byte 0
+FilenameCommand: .byte 0, 0	; 2 bytes for commands, like Scratch or New.
 Filename: .res 21			; Filename is in PETSCII
 FILENAME_LEN = *-Filename
 FILENAME_MAX = 16
+
+;.popseg
+
+.include "devices/closefile.s"
 
 .endif ;_OPENFILE_INC

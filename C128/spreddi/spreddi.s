@@ -19,7 +19,8 @@ CONSOLE_PTR			= SCREEN_PTR	; $e0
 
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
-DATA_PTR			= ZP_BASE+0
+FILENAME_PTR		= ZP_BASE+0
+DATA_PTR			= ZP_BASE+0	
 STRING_PTR			= ZP_BASE+2
 KEYMAP_PTR			= ZP_BASE+4
 MEMCPY_SRC			= ZP_BASE+6
@@ -46,10 +47,12 @@ COLOR_TXT_COLUMN	= 27
 SCREEN_VIC			= $0400
 SCREEN_COLUMNS		= 40
 SCREEN_LINES		= 23
-STATUS_LINE			= SCREEN_LINES+1		; Last line of screen
+STATUS_LINE_NR		= SCREEN_LINES+1		; Last line of screen
 SPRITE_PTR			= $7f8
 SPRITE_PREVIEW		= 0	; Number of the previewsprite
 SPRITE_CURSOR		= 1	; Number of the cursor sprite
+INPUT_LINE			= (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES)
+STATUS_LINE			= (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE_NR)
 
 SPRITE_BUFFER_LEN	= 64
 SPRITE_BASE			= $2000		; Sprite data pointer for preview.
@@ -61,6 +64,7 @@ MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The fir
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
 CURSOR_HOME_POS		= SCREEN_VIC+SCREEN_COLUMNS+1
+BASIC_MAX_LINE_LEN	= 255
 
 ; Flags for copying sprites from/to the preview buffer
 SPRITE_PREVIEW_SRC	= $01
@@ -2251,7 +2255,7 @@ MAIN_APPLICATION = *
 	jsr Flash
 	rts
 :
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #$00
 	jsr ClearLine
 
@@ -2286,7 +2290,7 @@ MAIN_APPLICATION = *
 	jsr SwitchFrame
 
 @Cancel:
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #0
 	jmp ClearLine
 .endproc
@@ -2316,7 +2320,7 @@ MAIN_APPLICATION = *
 :
 	jsr SaveDirty
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	SetPointer DeleteTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
@@ -2343,7 +2347,7 @@ MAIN_APPLICATION = *
 	jsr UpdateFrameEditor
 
 @Done:
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #$00
 	jmp ClearLine
 
@@ -2417,7 +2421,7 @@ MAIN_APPLICATION = *
 	lda MaxFrame
 	beq @Error
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 
 	ldx CurFrame
 	beq :+			; If we are not on the first frame
@@ -2444,7 +2448,7 @@ MAIN_APPLICATION = *
 	jsr UpdateFrameEditor
 
 @Cancel:
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #0
 	jsr ClearLine
 	rts
@@ -2493,7 +2497,7 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc MaxFramesReached
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
+	SetPointer (STATUS_LINE), CONSOLE_PTR
 	SetPointer MaxFramesReachedTxt, STRING_PTR
 	
 	ldy #0
@@ -2736,11 +2740,21 @@ MAIN_APPLICATION = *
 ; CONSOLE_PTR - points to the line
 .proc ClearLine
 	lda #' '
+	ldx #SCREEN_COLUMNS-1
 .endproc
 
-.proc FillLine
+; Fill max 255 with char
+;
+; PARAMS:
+; A - char to write
+; X - Number of character
+; Y - Offset on CONSOLE_PTR
+; CONSOLE_PTR
+;
+; RETURN:
+; X - $ff
+.proc FillChar
 
-	ldx #SCREEN_COLUMNS-1
 :
 	sta (CONSOLE_PTR),y
 	iny
@@ -2754,7 +2768,7 @@ MAIN_APPLICATION = *
 	lda #' '
 	ldy #79
 
-:	sta SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES,y
+:	sta INPUT_LINE,y
 	dey
 	bpl :-
 
@@ -2932,8 +2946,8 @@ MAIN_APPLICATION = *
 	jsr SaveDirty
 
 	jsr WaitKeyboardRelease
-	jsr GetSpriteSaveInfo
-	lbeq @Cancel
+	jsr GetSpriteSaveInfoDlg
+	lbcs @Cancel
 
 	; Calculate address of first frame where we want
 	; to save from
@@ -2958,7 +2972,7 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT HI
 
 	; print WRITING ...
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #$00
 	jsr ClearLine
 
@@ -2983,6 +2997,7 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta FrameNumberStart
 	sta FrameNumberCur
+	sta BackupLen
 
 	SetPointer SpriteSaveProgress, WriteFileProgressPtr
 	jsr SaveFile
@@ -3002,6 +3017,31 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SpriteSaveProgress
+
+	SetPointer (INPUT_LINE), CONSOLE_PTR
+
+	ldy BackupLen
+	beq @DoProgress
+
+@RestoreLoop:
+	lda LineBackup,y
+	sta (CONSOLE_PTR),y
+	dey
+	bpl @RestoreLoop
+
+	iny
+	sty BackupLen
+
+@DoProgress:
+
+	; We have to reset the pointers, just in case.
+	; If the user was asked to overwrite the
+	; file, these pointers point "somewhere", thus
+	; corrupting the memory.
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
 
 	ldx FrameNumberCur
 	inx
@@ -3025,7 +3065,7 @@ MAIN_APPLICATION = *
 .proc ShowStatusLine
 	jsr ClearStatusLines
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #0
 	jsr PrintStringZ
 
@@ -3036,9 +3076,12 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc GetSpriteSaveInfo
+; Ask the user for the frame start and end to save.
+; Also for the filename and device number.
+;
+.proc GetSpriteSaveInfoDlg
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #0
 	jsr ClearLine
 
@@ -3049,12 +3092,14 @@ MAIN_APPLICATION = *
 	lda #11
 	sta FramenumberOffset
 
+	; Set Frame limits
 	lda #0
 	sta EnterNumberCurVal
 	sta FrameNumberStartLo
 	lda MaxFrame
 	sta FrameNumberStartHi
 	sta FrameNumberEndHi
+
 	jsr EnterFrameNumbers
 	bcs @Cancel
 
@@ -3065,6 +3110,7 @@ MAIN_APPLICATION = *
 	jsr EnterFilename
 	bcs @Cancel
 
+@Done:
 	ldy #0
 	jsr ClearLine
 
@@ -3073,6 +3119,8 @@ MAIN_APPLICATION = *
 	rts
 
 @Cancel:
+	jsr @Done
+
 	sec
 	rts
 .endproc
@@ -3086,7 +3134,7 @@ MAIN_APPLICATION = *
 ; FrameNumberStartHi	- Highest value for start
 ; FrameNumberEndHi		- Highest value for end range
 ;                         lowest value is the start value entered
-; FramenumberOffset - First Input field
+; FramenumberOffset 	- First Input field
 ; EnterNumberCurVal		- Current value of lowframe
 ;
 ; RETURN:
@@ -3164,10 +3212,14 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
+; Ask the user for a filename.
+;
+; PARAM:
+;
 ; RETURN:
-; Carry - Set if cancled
+; Carry - Set if canceled
 .proc EnterFilename
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	SetPointer FilenameTxt, STRING_PTR
 
 	ldy #0
@@ -3182,7 +3234,7 @@ MAIN_APPLICATION = *
 	jsr PrintStringZ
 
 @InputLoop:
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+FilenameTxtLen), CONSOLE_PTR
+	SetPointer (INPUT_LINE+FilenameTxtLen), CONSOLE_PTR
 	SetPointer Filename, STRING_PTR
 
 	ldx FilenameLen
@@ -3195,7 +3247,7 @@ MAIN_APPLICATION = *
 	sty FilenameLen
 
 	; Get drive number 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES+33), CONSOLE_PTR
+	SetPointer (INPUT_LINE+33), CONSOLE_PTR
 
 	lda #$02
 	sta EnterNumberStrLen
@@ -3226,7 +3278,7 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR HI
 	pha
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
+	SetPointer (STATUS_LINE), CONSOLE_PTR
 	SetPointer EmptyFilenameTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
@@ -3339,7 +3391,7 @@ MAIN_APPLICATION = *
 ; A - Lobyte of value
 ; X - Hibyte of value
 ; Carry - clear (OK) : set (CANCEL)
-; If Y != 1 the value in A is undefined and should not be used.
+; If C is set, the value in A is undefined and should not be used.
 .proc InputNumber
 	SetPointer NumberInputFilter, InputFilterPtr
 
@@ -3418,7 +3470,7 @@ MAIN_APPLICATION = *
 	lda CONSOLE_PTR HI
 	sta EnterNumberConsolePtr+1
 
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*STATUS_LINE), CONSOLE_PTR
+	SetPointer (STATUS_LINE), CONSOLE_PTR
 	SetPointer EnterNumberMsg, STRING_PTR
 	ldy #0
 	ldx #EnterNumberMsgLen
@@ -3460,8 +3512,75 @@ MAIN_APPLICATION = *
 	jmp @InputLoop
 .endproc
 
+; Check if the specified file exists and ask
+; user to overwrite it.
+;
+; PARAM:
+; Filename - Filename in PETSCII
+; FilenameLen - Length of the filename
+;
+; RETURN:
+; Z - 1 : Overwrite, 0 : Keep. The returncode
+;     is set last on exit, so the caller
+;     can directly use the Z-flag as well.
+; Carry - Set if canceled
+;         If cleared, then A/Z contains response
+.proc OverwriteFileDlg
+
+	SetPointer INPUT_LINE, CONSOLE_PTR
+	ldy #0
+	jsr ClearLine
+
+	SetPointer FileExistsTxt, STRING_PTR
+	ldy #0
+	jsr PrintStringZ
+
+	; Position cursor on the 'N'
+	dey
+	sty TMP_VAL_0
+
+	clc
+	lda CONSOLE_PTR
+	adc TMP_VAL_0
+	sta CONSOLE_PTR
+	lda CONSOLE_PTR HI
+	adc #$00
+	sta CONSOLE_PTR HI
+
+	; Default is 'N'
+	SetPointer TMP_VAL_0, STRING_PTR
+	lda #$4e				; 'N'
+	sta TMP_VAL_0
+
+	SetPointer YNInputFilter, InputFilterPtr
+
+	ldx #1
+	ldy #1
+	jsr Input
+	bcs @Cancel
+
+	SetPointer DefaultInputFilter, InputFilterPtr
+
+	lda TMP_VAL_0
+	cmp #$4e				; 'N'
+	bne @Done				; Read Z-1 to Overwrite file
+
+	; Z - 0 : Keep file
+
+@Done:
+	clc
+	rts
+
+@Cancel:
+	SetPointer DefaultInputFilter, InputFilterPtr
+	sec
+	rts
+.endproc
+
 ; Write a memoryblock into a sequential
-; file.
+; file. If the file already exists the
+; user is asked if he wants to overwrite
+; and if not, to enter a new filename.
 ;
 ; PARAM:
 ; Filename - Filename in PETSCII
@@ -3471,9 +3590,24 @@ MAIN_APPLICATION = *
 ; WriteFileProgressPtr
 ;
 ; RETURN:
-; STATUS - Errorstatus from OS
-;
+; Carry - set on error
 .proc SaveFile
+
+	lda CONSOLE_PTR
+	sta ConsolePtrBackup
+	lda CONSOLE_PTR HI
+	sta ConsolePtrBackup HI
+
+	ldy #SCREEN_COLUMNS-1
+	sty BackupLen
+
+@BackupLoop:
+	lda (CONSOLE_PTR),y
+	sta LineBackup,y
+	dey
+	bpl @BackupLoop
+
+@Retry:
 	ldx DeviceNumber
 	jsr OpenDiscStatus
 	bcs @Error
@@ -3481,32 +3615,81 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta STATUS
 
+	SetPointer Filename, FILENAME_PTR
+
+	lda #'s'
+	sta FileType
 	lda #'w'			; Write mode
 	ldy #2				; Fileno
 	ldx DeviceNumber	; Device
 	jsr OpenFile
-	bcs @Error
+	bcc @Write			; Open worked
 
+	; Check if file exists error
+	lda DiscStatusCode
+	cmp #63
+	bne @Error			; Some other error
+
+	; If file exists we have to check for overwriting
+	jsr OverwriteFileDlg
+	bcs @Cancel
+	bne @DeleteFile	; User answered Y, so the file should be deleted
+
+	; When entering 'N' The user is asked for a new filename
+	jsr EnterFilename
+	bcs @Cancel
+
+	jsr @Cleanup
+	jmp @Retry			; Try again with new filename
+
+@DeleteFile:
+	SetPointer INPUT_LINE, CONSOLE_PTR
+	ldy #$00
+	jsr ClearLine
+
+	SetPointer DeleteTxt, STRING_PTR
+	ldy #$00
+	jsr PrintStringZ
+	SetPointer Filename, STRING_PTR
+	iny
+	ldx FilenameLen
+	jsr PrintPETSCII
+
+	jsr @Cleanup
+	jsr DeleteFile
+	jmp @Retry		; Try again with after file was deleted.
+
+@Write:
 	ldx #2
 	jsr WriteFile
 	bcs @Error
 
 @Close:
+	jsr @Cleanup
+	clc
+	rts
+
+@Error:
+	jsr FileError
+
+@Cancel:
+	jsr @Cleanup
+	sec
+	rts
+
+@Cleanup:
 	lda #2
 	jsr CloseFile
 
 	ldx DeviceNumber
 	jsr CloseDiscStatus
 
-	clc
-	rts
+	lda ConsolePtrBackup
+	sta CONSOLE_PTR
+	lda ConsolePtrBackup HI
+	sta CONSOLE_PTR HI
 
-@Error:
-	jsr FileError
-	jsr @Close
-	sec
 	rts
-
 .endproc
 
 ; Write a memoryblock into a sequential
@@ -3531,7 +3714,10 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta STATUS
 
-	lda #'r'			; Write mode
+	SetPointer Filename, FILENAME_PTR
+	lda #'s'
+	sta FileType
+	lda #'r'			; Read mode
 	ldy #2				; Fileno
 	ldx DeviceNumber	; Device
 	jsr OpenFile
@@ -3560,7 +3746,7 @@ MAIN_APPLICATION = *
 
 ; Print an appropriate errormessage
 .proc FileError
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 
 	; Check if DiscStatus was already called
 	ldx DiscStatusCode
@@ -3628,7 +3814,7 @@ MAIN_APPLICATION = *
 	sta MEMCPY_TGT HI
 
 	; print READING ...
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*SCREEN_LINES), CONSOLE_PTR
+	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #$00
 	jsr ClearLine
 
@@ -3736,6 +3922,7 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/keyboard_mapping.s"
 .include "kbd/input.s"
 .include "kbd/number_input_filter.s"
+.include "kbd/y_n_input_filter.s"
 
 .include "math/bintobcd16.s"
 .include "math/mult16x16.s"
@@ -3751,6 +3938,7 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "devices/openfile.s"
 .include "devices/readfile.s"
 .include "devices/writefile.s"
+.include "devices/deletefile.s"
 ; **********************************************
 .segment "DATA"
 ;                            1         2         3         4
@@ -3788,7 +3976,8 @@ DoneTxt:		.byte "DONE                                    ",0
 EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
-ExportBasicTxt: .byte "LNR: 1000 STEP:  10 COMPRESSED/PRETTY:P",0
+ExportBasicTxt: .byte "LNR:10000 STEP:1000 COMPRESSED/PRETTY: P",0
+FileExistsTxt: .byte "FILE EXISTS! OVERWRITE? N",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
 ErrorDeviceNotPresentTxtLen = (*-ErrorDeviceNotPresentTxt)-1
@@ -4002,6 +4191,12 @@ SymKeytableShift:		.res KeyTableLen
 SymKeytableCommodore:	.res KeyTableLen
 SymKeytableControl:		.res KeyTableLen
 SymKeytableAlt:			.res KeyTableLen
+
+BackupLen: .byte 0
+ConsolePtrBackup: .word 0
+LineBackup: .res BASIC_MAX_LINE_LEN
+LineBackupLen = SCREEN_COLUMNS
+
 BSS_END = *
 
 END:

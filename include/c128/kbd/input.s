@@ -158,6 +158,7 @@ EMPTY_CHAR		= 100	; '_'
 	jsr InputInsertCharacter
 	jmp @KeyLoop
 :
+	jsr CallKeyboardFilter
 	bcc :+
 	jmp @KeyLoop
 :

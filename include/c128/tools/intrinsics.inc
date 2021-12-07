@@ -15,7 +15,6 @@ _MNEMONICS_INC = 1
 	pha
 .endmacro
 
-; branch equal far
 .macro lbeq address
 	.local @l1
 	bne @l1
@@ -23,10 +22,23 @@ _MNEMONICS_INC = 1
 @l1:
 .endmacro
 
-; branch not equal far
 .macro lbne address
 	.local @l1
 	beq @l1
+	jmp address
+@l1:
+.endmacro
+
+.macro lbcs address
+	.local @l1
+	bcc @l1
+	jmp address
+@l1:
+.endmacro
+
+.macro lbcc address
+	.local @l1
+	bcs @l1
 	jmp address
 @l1:
 .endmacro

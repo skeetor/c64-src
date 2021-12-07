@@ -97,5 +97,5 @@ These keys work in all editor modes<br>
 
 ### <u><b>Done</b></u><br>
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
-* Use .bss segment to remove uninitialized bytes from * binary<br>
+* <s>Use .bss segment to remove uninitialized bytes from * binary</s><br>
 * <s>NoRepeat keys no longer working</s><br>
