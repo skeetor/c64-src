@@ -2814,13 +2814,13 @@ MAIN_APPLICATION = *
 	pha					; Save line offset
 
 	lda #$00
-	sta BINVal+1
+	sta BINVal HI
 	jsr BinToBCD16
 
 	pla
 	tay					; Restore line offset
 	inx					; Skip the first digit otherwise it would be 4
-	txa					; We only need 3 digits
+	txa
 	jmp BCDToString
 .endproc
 
@@ -2939,18 +2939,21 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc SaveSprites
-
+; Function asking the user for framenumber and
+; filename which is used in all saving dialogs
+; A prefix must be set so the user knows which
+; save method he uses.
+.proc InitSaveDlg
 	; Copy the current edit buffer to the sprite frame buffer
 	ldx CurFrame
 	jsr SaveDirty
 
 	jsr WaitKeyboardRelease
 	jsr GetSpriteSaveInfoDlg
-	lbcs @Cancel
+	bcs @Cancel
 
 	; Calculate address of first frame where we want
-	; to save from
+	; to save from.
 	lda FrameNumberStart
 	jsr CalcFramePointer
 
@@ -2971,11 +2974,29 @@ MAIN_APPLICATION = *
 	adc #$00
 	sta MEMCPY_TGT HI
 
-	; print WRITING ...
 	SetPointer (INPUT_LINE), CONSOLE_PTR
 	ldy #$00
 	jsr ClearLine
 
+	clc
+	rts
+
+@Cancel:
+	ldy #$00
+	jsr ClearLine
+
+	sec
+	rts
+
+.endproc
+
+.proc SaveSprites
+	; Set prefix
+	SetPointer SaveTxt, STRING_PTR
+	jsr InitSaveDlg
+	bcs @Cancel
+
+	; print WRITING ...
 	SetPointer WritingTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
@@ -3085,11 +3106,15 @@ MAIN_APPLICATION = *
 	ldy #0
 	jsr ClearLine
 
-	SetPointer SaveTxt, STRING_PTR
 	ldy #0
 	jsr PrintStringZ
 
-	lda #11
+	; Append FrameTxt after our prefix
+	; to position the cursor on the first
+	; input field.
+	tya
+	clc
+	adc #6				; "FRAME:"
 	sta FramenumberOffset
 
 	; Set Frame limits
@@ -3159,7 +3184,7 @@ MAIN_APPLICATION = *
 	SetPointer EnterNumberStr, STRING_PTR
 
 	lda #3
-	sta EnterNumberStrLen
+	sta EnterNumberMaxDigits
 
 	; Get low frame
 	clc
@@ -3250,7 +3275,7 @@ MAIN_APPLICATION = *
 	SetPointer (INPUT_LINE+33), CONSOLE_PTR
 
 	lda #$02
-	sta EnterNumberStrLen
+	sta EnterNumberMaxDigits
 
 	lda DeviceNumber
 	ldx #8
@@ -3309,7 +3334,7 @@ MAIN_APPLICATION = *
 ; A - Framenumber to use as default
 ; Y - Offset of frame string.
 ; CONSOLE_PTR - position of the FRAME text.
-; EnterNumberStrLen - Length of input string (1...3)
+; EnterNumberMaxDigits - Length of input string (1...3)
 ;
 ; RETURN:
 ; A - Lobyte of value
@@ -3323,7 +3348,7 @@ MAIN_APPLICATION = *
 	jsr PrintString
 
 	lda #3
-	sta EnterNumberStrLen
+	sta EnterNumberMaxDigits
 
 	; Set intput cursor after the text.
 	clc
@@ -3364,40 +3389,51 @@ MAIN_APPLICATION = *
 ; X - MinValue
 ; Y - MaxValue
 ; CONSOLE_PTR - position of the input string
-; EnterNumberStrLen - Length of input string (1...3)
+; EnterNumberMaxDigits - Length of input string (1...3)
 ;
 ; RETURN:
 ; A - Lobyte of value
 ; X - Hibyte of value
-; Y - 1 (OK) : 0 (CANCEL)
-; If Y != 1 the value in A is undefined and should not be used.
+; C - clear (OK) : set (CANCEL)
+; If C is set the value in A is undefined and should not be used.
 .proc EnterNumberValue
 	sta EnterNumberCurVal
 	stx EnterNumberMinVal
 	sty EnterNumberMaxVal
+
+	lda #$00
+	sta EnterNumberCurVal HI
+	sta EnterNumberMinVal HI
+	sta EnterNumberMaxVal HI
+
 .endproc
 
-; Input a number value which can be 0...255
+; Input a number value which can be 0...65535
 ;
 ; PARAMS:
 ; EnterNumberEmpty	0 - Print curValue as default. 1 - Leave string empty
 ; EnterNumberCurVal
 ; EnterNumberMinVal
 ; EnterNumberMaxVal
+; EnterNumberMaxDigits
 ; CONSOLE_PTR - position of the input string
-; EnterNumberStrLen - Length of input string (1...3)
+; EnterNumberMaxDigits - Length of input string (1...5)
 ;
 ; RETURN:
 ; A - Lobyte of value
 ; X - Hibyte of value
-; Carry - clear (OK) : set (CANCEL)
+; C - clear (OK) : set (CANCEL)
 ; If C is set, the value in A is undefined and should not be used.
 .proc InputNumber
 	SetPointer NumberInputFilter, InputFilterPtr
 
 @InputLoop:
 	SetPointer EnterNumberStr, STRING_PTR
-	ldy #4					; max 3 digits +1 end byte
+	ldy #EnterNumberStrLen-1
+						; 5 digits + clear the last
+						; byte to make sure the number
+						; conversion doesn't pick up a
+						; stray digit.
 	lda #' '
 
 @ClearString:
@@ -3413,8 +3449,8 @@ MAIN_APPLICATION = *
 @PrintDefault:
 	lda EnterNumberCurVal
 	sta BINVal
-	lda #$00
-	sta BINVal+1
+	lda EnterNumberCurVal HI
+	sta BINVal HI
 	jsr BinToBCD16
 
 	lda #$ff			; Enable left alignment for the input
@@ -3425,7 +3461,7 @@ MAIN_APPLICATION = *
 	jsr BCDToString
 
 @SkipPrint:
-	ldy EnterNumberStrLen
+	ldy EnterNumberMaxDigits
 	jsr Input
 	bcs @Cancel			; User pressed cancel button
 	cpy #$00			; Empty string was entered
@@ -3910,7 +3946,13 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc ExportBasicData
-	;PAGE_NOP
+	SetPointer ExportTxt, STRING_PTR
+	jsr InitSaveDlg
+
+	SetPointer ExportBasicTxt, STRING_PTR
+	ldy #$00
+	jsr PrintStringZ
+
 	rts
 .endproc
 
@@ -3968,6 +4010,7 @@ CanceledTxt:	.byte "           OPERATION CANCELED           ",0
 FilenameTxt:	.byte "FILENAME: ",0
 FilenameTxtLen	= (*-FilenameTxt)-1
 SaveTxt:		.byte "SAVE ",0
+ExportTxt:		.byte "EXPORT ",0
 OpenFileTxt:	.byte "OPEN FILE: ",0
 WritingTxt:		.byte "WRITING ",0
 LoadingTxt:		.byte "READING ",0
@@ -3976,8 +4019,8 @@ DoneTxt:		.byte "DONE                                    ",0
 EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
-ExportBasicTxt: .byte "LNR:10000 STEP:1000 COMPRESSED/PRETTY: P",0
 FileExistsTxt: .byte "FILE EXISTS! OVERWRITE? N",0
+ExportBasicTxt: .byte "LNR: 1000 STEP: 100 CMPR/PRETTY: C",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
 ErrorDeviceNotPresentTxtLen = (*-ErrorDeviceNotPresentTxt)-1
@@ -4160,12 +4203,13 @@ FrameNumberStartLo: .byte 0
 FrameNumberStartHi: .byte 0
 FrameNumberEndHi: .byte 0
 
-EnterNumberStr: .res 7
-EnterNumberStrLen: .byte 0	; Length of the input string
-EnterNumberEmpty: .byte 0	; 1 - InputNumber will not print the current value
-EnterNumberCurVal: .byte 0
-EnterNumberMinVal: .byte 0
-EnterNumberMaxVal: .byte 0
+EnterNumberStrLen = 7
+EnterNumberStr: .res EnterNumberStrLen
+EnterNumberMaxDigits: .byte 0
+EnterNumberEmpty: .byte 0		; 1 - InputNumber will not print the current value
+EnterNumberCurVal: .word 0
+EnterNumberMinVal: .word 0
+EnterNumberMaxVal: .word 0
 EnterNumberStringPtr: .word 0
 EnterNumberConsolePtr: .word 0
 
@@ -4176,11 +4220,8 @@ MoveTargetFrame: .byte 0
 MoveDirection: .word 0
 CopyFrameFlag: .word 0
 
-; Characters to be used for the sprite preview border
-; on the bottom line. This depends on the size, because
-; we need to use different chars for the expanded vs.
-; unexpanded Y size on the bottom line.
-LeftBottomRight: .res $03, $00
+; Characters to be used for a frame border
+LeftBottomRight: .res 8
 
 FramePtr: .word 0	; Address for current frame pointer
 
