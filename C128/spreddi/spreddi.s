@@ -127,34 +127,6 @@ basicstub:
 
 	jsr Setup
 
-	jsr ClearScreen
-
-@TestInput:
-	SetPointer $0400, CONSOLE_PTR
-	ldy #40
-	jsr ClearLine
-
-	SetPointer 1000, EnterNumberMinVal
-	SetPointer 2000, EnterNumberMaxVal
-	SetPointer 1500, EnterNumberCurVal
-	lda #5
-	sta EnterNumberMaxDigits
-	jsr InputNumber
-	bcs @TestExit
-
-	sta $0401+40
-	sty $0400+40
-	SetPointer $0400+40, CONSOLE_PTR
-	ldy #0
-	jsr PrintStringZ
-	jsr WaitKeyboardPressed
-	jsr WaitKeyboardRelease
-	jmp @TestInput
-
-@TestExit:
-	jsr Cleanup
-	rts
-
 	lda #COL_BLACK
 	sta VIC_BORDERCOLOR
 	sta VIC_BG_COLOR0
@@ -504,7 +476,6 @@ basicstub:
 
 	inc $0400
 
-@SkipBCD:
 	pla
 	sta MMU_LOAD_CR
 	pla
@@ -521,7 +492,7 @@ basicstub:
 	lda $0315
 	sta IRQVector HI
 
-	; TODO: IRQ handler not working properly
+	; TODO: IRQ handler not working, this was just experimental
 	rts
 
 	sei
@@ -2831,26 +2802,33 @@ MAIN_APPLICATION = *
 ; TMP_VAL_2
 .proc PrintFrameCounter
 
-	LAST_FRAME_VAL = TMP_VAL_2
+	LAST_FRAME_VAL = EditCurChar
 
-	; For display to the user we want to have the counter
-	; from 1...MAX_FRAMES
-	inx
+	inx					; Convert to 1..N for display
 	stx LAST_FRAME_VAL
 
-	tax
-	inx
+	; Lower vlaue
+	clc
+	adc #$01			; Convert to 1..N for display
+	sta BINVal
 
-	lda #$00			; We want right alignment
-	sta LeftAligned
-	lda #$01
+	; We assume that at most 255 frames are more then enough.
+	ldx #$00
+	stx BINVal+1		; Clear HiByte
+
+	lda #3				; Max 3 digits (one byte)
+	ldx #DEC_ALIGN_RIGHT
 	jsr PrintDecimal
 
-	ldx LAST_FRAME_VAL
+	; Upper value
+	lda LAST_FRAME_VAL
+	sta BINVal
 
-	lda #$01			; Skip the first digit otherwise it would be 4
-	iny
-	jmp PrintDecimal
+	lda #3				; Max 3 digits (one byte)
+	ldx #DEC_ALIGN_RIGHT
+	iny					; Skip the separator
+	jsr PrintDecimal
+	rts
 .endproc
 
 .proc ToggleGridPixel
@@ -3439,23 +3417,20 @@ MAIN_APPLICATION = *
 	bpl @ClearString
 
 	lda EnterNumberEmpty
-	beq @PrintDefault
+	beq @PrintCurVal
 	ldx #$00
 	jmp @SkipPrint
 
-@PrintDefault:
+@PrintCurVal:
 	lda EnterNumberCurVal
 	sta BINVal
 	lda EnterNumberCurVal HI
 	sta BINVal HI
-	jsr BinToBCD16
 
-	lda #$ff			; Enable left alignment for the input
-	sta LeftAligned
-	lda #$01			; We only need 3 digits, so we have to skip the highbyte
-	tax
+	lda EnterNumberMaxDigits
+	ldx #0				; Left aligned
 	ldy #0
-	jsr BCDToString
+	jsr PrintDecimal
 
 @SkipPrint:
 	ldy EnterNumberMaxDigits
@@ -3467,19 +3442,36 @@ MAIN_APPLICATION = *
 	; String length of input string
 	tya
 	tax
-
 	jsr StringToBin16
+	sta EnterNumberCurVal
+	stx EnterNumberCurVal HI
 
+   ; X = HiByte
+   ; A = LoByte
+
+	; Check range of input against the
+	; range limits.
+	; if (v < min || v > max)
+	;	error
+
+	; V < Min?
 	cpx EnterNumberMinVal HI
-	blt @RangeError
-	cpx EnterNumberMaxVal HI
-	blt @RangeError
-
+	bcc @RangeError				; Hi < Min
+	bne @CheckMax				; Hi != Min
 	cmp EnterNumberMinVal
-	blt @RangeError
-	cmp EnterNumberMaxVal
-	bgt @RangeError
+	bcc @RangeError				; Lo < Min
 
+@CheckMax:
+	; V > Max?
+	cpx EnterNumberMaxVal HI
+	bcc @Accept					; Hi < Max
+	bne @RangeError				; Hi != Max
+
+	cmp EnterNumberMaxVal
+	beq @Accept					; Lo == Max
+	bcs @RangeError				; Lo >= Max
+
+@Accept:
 	jmp @Done
 
 @Cancel:
@@ -3511,6 +3503,11 @@ MAIN_APPLICATION = *
 	ldx #EnterNumberErrorMsgLen
 	jsr PrintString
 
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
+
 	; Print allowed range values
 	; Lower value
 	lda EnterNumberMinVal
@@ -3518,9 +3515,22 @@ MAIN_APPLICATION = *
 	lda EnterNumberMinVal HI
 	sta BINVal HI
 
+	lda EnterNumberMaxDigits
+	ldx #0				; Left aligned
 	jsr PrintDecimal
 
 	; Upper value
+	lda EnterNumberMaxVal
+	sta BINVal
+	lda EnterNumberMaxVal HI
+	sta BINVal HI
+
+	lda #'/'
+	sta (CONSOLE_PTR),y
+	iny
+
+	lda EnterNumberMaxDigits
+	ldx #0				; Left aligned
 	jsr PrintDecimal
 
 	jsr Delay
@@ -3532,7 +3542,7 @@ MAIN_APPLICATION = *
 	pla
 	sta CONSOLE_PTR HI
 	pla
-	lda CONSOLE_PTR
+	sta CONSOLE_PTR
 
 	jmp @InputLoop
 .endproc
