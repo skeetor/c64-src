@@ -28,6 +28,7 @@ _OPENFILE_INC = 1
 
 ;.pushseg
 ;.code
+
 .proc OpenFile	; Prepare filename by appending 
 
 	sta OpenMode

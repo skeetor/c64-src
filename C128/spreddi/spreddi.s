@@ -127,6 +127,34 @@ basicstub:
 
 	jsr Setup
 
+	jsr ClearScreen
+
+@TestInput:
+	SetPointer $0400, CONSOLE_PTR
+	ldy #40
+	jsr ClearLine
+
+	SetPointer 1000, EnterNumberMinVal
+	SetPointer 2000, EnterNumberMaxVal
+	SetPointer 1500, EnterNumberCurVal
+	lda #5
+	sta EnterNumberMaxDigits
+	jsr InputNumber
+	bcs @TestExit
+
+	sta $0401+40
+	sty $0400+40
+	SetPointer $0400+40, CONSOLE_PTR
+	ldy #0
+	jsr PrintStringZ
+	jsr WaitKeyboardPressed
+	jsr WaitKeyboardRelease
+	jmp @TestInput
+
+@TestExit:
+	jsr Cleanup
+	rts
+
 	lda #COL_BLACK
 	sta VIC_BORDERCOLOR
 	sta VIC_BG_COLOR0
@@ -401,8 +429,9 @@ basicstub:
 	sta SPRITE_EXP_X
 	sta SPRITE_EXP_Y
 
-	; Init the default keyboardhandler
+	; Init the default pointers
 	SetPointer (EditorKeyboardHandler), EditorKeyHandler
+	SetPointer (STATUS_LINE), EnterNumberConsolePtr
 
 	lda #8
 	sta DeviceNumber
@@ -2792,38 +2821,6 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-; Print a single byte value as decimal
-;
-; PARAMS:
-; A - Skip number of digits
-; X - Value
-; Y - Offset in String
-; STRING_PTR
-;
-; OPTIONAL:
-; LeadingZeroes
-; LeftAligned
-;
-; RETURN:
-; Y - Position after last char printed
-.proc PrintByteDec
-
-	stx BINVal
-	tax
-	tya
-	pha					; Save line offset
-
-	lda #$00
-	sta BINVal HI
-	jsr BinToBCD16
-
-	pla
-	tay					; Restore line offset
-	inx					; Skip the first digit otherwise it would be 4
-	txa
-	jmp BCDToString
-.endproc
-
 ; Print the frame counters N/M
 ; STRING_PTR - point to start of the first digit.
 ; A - First frame - 0 ... MAX_FRAMES-1
@@ -2847,13 +2844,13 @@ MAIN_APPLICATION = *
 	lda #$00			; We want right alignment
 	sta LeftAligned
 	lda #$01
-	jsr PrintByteDec
+	jsr PrintDecimal
 
 	ldx LAST_FRAME_VAL
 
 	lda #$01			; Skip the first digit otherwise it would be 4
 	iny
-	jmp PrintByteDec
+	jmp PrintDecimal
 .endproc
 
 .proc ToggleGridPixel
@@ -3472,8 +3469,11 @@ MAIN_APPLICATION = *
 	tax
 
 	jsr StringToBin16
-	cpx #$00			; Value can not be higher than 255
-	bne @RangeError		; So the highbyte must be 0
+
+	cpx EnterNumberMinVal HI
+	blt @RangeError
+	cpx EnterNumberMaxVal HI
+	blt @RangeError
 
 	cmp EnterNumberMinVal
 	blt @RangeError
@@ -3496,38 +3496,32 @@ MAIN_APPLICATION = *
 	rts
 
 @RangeError:
-	lda STRING_PTR
-	sta EnterNumberStringPtr
-	lda STRING_PTR HI
-	sta EnterNumberStringPtr+1
-
 	lda CONSOLE_PTR
-	sta EnterNumberConsolePtr
+	pha
 	lda CONSOLE_PTR HI
-	sta EnterNumberConsolePtr+1
+	pha
 
-	SetPointer (STATUS_LINE), CONSOLE_PTR
-	SetPointer EnterNumberMsg, STRING_PTR
+	lda EnterNumberConsolePtr
+	sta CONSOLE_PTR
+	lda EnterNumberConsolePtr HI
+	sta CONSOLE_PTR HI
+
+	SetPointer EnterNumberErrorMsg, STRING_PTR
 	ldy #0
-	ldx #EnterNumberMsgLen
+	ldx #EnterNumberErrorMsgLen
 	jsr PrintString
 
-	lda CONSOLE_PTR
-	sta STRING_PTR
-	lda CONSOLE_PTR HI
-	sta STRING_PTR HI
+	; Print allowed range values
+	; Lower value
+	lda EnterNumberMinVal
+	sta BINVal
+	lda EnterNumberMinVal HI
+	sta BINVal HI
 
-	ldx EnterNumberMinVal
-	dex
-	txa
-	ldx EnterNumberMaxVal
-	dex
-	ldy #24
-	jsr PrintFrameCounter
+	jsr PrintDecimal
 
-	lda #'/'
-	ldy #27
-	sta (CONSOLE_PTR),y
+	; Upper value
+	jsr PrintDecimal
 
 	jsr Delay
 	jsr Delay
@@ -3535,15 +3529,10 @@ MAIN_APPLICATION = *
 	ldy #0
 	jsr ClearLine
 
-	lda EnterNumberConsolePtr
-	sta CONSOLE_PTR
-	lda EnterNumberConsolePtr+1
+	pla
 	sta CONSOLE_PTR HI
-
-	lda EnterNumberStringPtr
-	sta STRING_PTR
-	lda EnterNumberStringPtr+1
-	sta STRING_PTR HI
+	pla
+	lda CONSOLE_PTR
 
 	jmp @InputLoop
 .endproc
@@ -3966,10 +3955,9 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/number_input_filter.s"
 .include "kbd/y_n_input_filter.s"
 
-.include "math/bintobcd16.s"
 .include "math/mult16x16.s"
 
-.include "string/bcdtostring.s"
+.include "string/printdec.s"
 .include "string/printstring.s"
 .include "string/printpetscii.s"
 .include "string/printstringz.s"
@@ -3991,8 +3979,8 @@ VersionTxt: .byte   "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
 FilenameDefaultTxt: .byte "spritedata"	; Filename is in PETSCII
 FilenameDefaultTxtLen = *-FilenameDefaultTxt
 
-EnterNumberMsg: .byte "VALUE MUST BE IN RANGE "
-EnterNumberMsgLen = *-EnterNumberMsg
+EnterNumberErrorMsg: .byte "VALUE MUST BE IN RANGE "
+EnterNumberErrorMsgLen = *-EnterNumberErrorMsg
 
 MaxFrameValue: .word MAX_FRAMES
 FrameTxt: .byte "FRAME:  1/  1",0
@@ -4211,7 +4199,7 @@ EnterNumberCurVal: .word 0
 EnterNumberMinVal: .word 0
 EnterNumberMaxVal: .word 0
 EnterNumberStringPtr: .word 0
-EnterNumberConsolePtr: .word 0
+EnterNumberConsolePtr: .word 0	; Where to print the error message
 
 MoveFrameCnt: .byte 0
 MoveFirstFrame: .byte 0

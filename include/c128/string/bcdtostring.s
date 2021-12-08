@@ -1,17 +1,28 @@
 ; Convert BCD value to string
 ; Written by Gerhard W. Gruber in 11.09.2021
 ;
+; Prints as many BCD bytes as specified by X.
+; The BCD bytes must be in reverse order, highest
+; byte rightmost.
+;
+; BCDVal is by default only 3 bytes (for 16 bit bin to decimal)
+; but this function makes no such assumptions, so 
+; BCDVal can be increased to store as large BCD values
+; as desired.
+;
 ; Pointer in STRING_PTR
 ; Y - Offset in string
-; X - Offset in BCDVal
+; X - Index of BCDVal
 ; A - 1 = Skip first digit. This is needed when an uneven
 ;		number of digits is desired, otherwise it will always be
 ;		a multiple of 2 digits.
 ; STRING_PTR - Pointer to the string
-; LeadingZeroes - Set to 0 if they should be showed, $ff if
-;       spaces should be used.
-; LeftAligned - If set to $ff the digits start at the left
-;               side, otherwise set to 0
+; ShowLeadingZeroes 
+;                 $00 : show leading zeroes
+;				  $ff : fill with spaces
+;                 If left aligned is enabled ($00), this flag has no effect
+; LeftAligned   - $00 : Left aligned
+;				  $ff : Right aligned
 ;
 ; Return:
 ; Y - Offset after the last char
@@ -21,20 +32,20 @@
 .ifndef _BCDTOSTRING_INC
 _BCDTOSTRING_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc BCDToString
 
 	pha
 	lda #$ff
-	sta LeadingZeroes
+	sta LeadingZeroFlag
 	lda #$00
 	sta NumberOfDigits
 	pla
 
 	; Should we start with the lowbyte?
-	cmp #$01
-	beq @LoByte
+	bne @LoByte
 
 @HiByte:
 	lda #$00
@@ -57,12 +68,12 @@ _BCDTOSTRING_INC = 1
 	adc #'0'
 	cmp #'0'
 	beq @CheckZero
-	inc LeadingZeroes	; Clear leading zero marker
+	inc LeadingZeroFlag	; Clear leading zero marker
 	bpl @Store			; Not a zero so we can always store it
 
 @CheckZero:
 	; Check the hi-bit if we still have leading zeroes
-	bit LeadingZeroes
+	bit LeadingZeroFlag
 	bpl @Store			; Not leading, so we have to store it
 
 	bit LeftAligned		; Skip leading zeroes
@@ -120,14 +131,14 @@ _BCDTOSTRING_INC = 1
 
 .endproc
 
-;.segment "DATA"
+;.data
 
 ; Internal use
 
 ; Set to $ff if the hiyte of a BCDValue is to be printed, otherwise $00 for the lowbyte
 DigitToggle: .byte 0
 ; Marker to check if we are still having leading zerores ($ff).
-LeadingZeroes: .byte 0
+LeadingZeroFlag: .byte 0
 
 ; Input parameters, can be set by the caller
 ShowLeadingZeroes: .byte 0
@@ -135,5 +146,7 @@ LeftAligned: .byte 0
 
 ; Return value: Number of digits printed. If leading zeroes are shown, they are included in the count.
 NumberOfDigits: .byte 0
+
+;.popseg
 
 .endif ; _BCDTOSTRING_INC
