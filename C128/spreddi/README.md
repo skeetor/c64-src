@@ -84,7 +84,7 @@ These keys work in all editor modes<br>
     The order doesn't reflect the priority :)
 <br>
 
-
+* Refactor InputNumber to library
 * Refactor DrawGridMatrix seperate frameborder<br>
 * Port to C64<br>
 * Port to MEGA65<br>

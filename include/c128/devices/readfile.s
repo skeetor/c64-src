@@ -16,7 +16,8 @@
 .ifndef _READFILE_INC
 _READFILE_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc ReadFile
 
@@ -72,8 +73,10 @@ _READFILE_INC = 1
 	rts
 .endproc
 
-;.segment "DATA"
+;.data
 
 ReadFileProgressPtr: .word DefaultReadProgess
+
+;.popseg
 
 .endif ;_READFILE_INC

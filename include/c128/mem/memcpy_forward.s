@@ -12,7 +12,8 @@
 .ifndef _MEMCOPY_FORWARD_INC
 _MEMCOPY_FORWARD_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc MemCopyForward
 
@@ -67,5 +68,7 @@ _MEMCOPY_FORWARD_INC = 1
 @Done:
 	rts
 .endproc
+
+;.popseg
 
 .endif ; _MEMCOPY_FORWARD_INC

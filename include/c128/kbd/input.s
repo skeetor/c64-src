@@ -11,9 +11,8 @@
 ; STRING_PTR - PETSCII string
 ;
 ; RETURN:
-; A = 0 (Cancel)
-;
-; A = 1 (OK)
+; C = set (Cancel)
+;     clear (OK)
 ; Y = Length of input string.
 ;
 ; The caller can set the pointer InputFilterPtr
@@ -35,7 +34,8 @@ _INPUT_INC = 1
 
 EMPTY_CHAR		= 100	; '_'
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc Input
 	
@@ -393,10 +393,7 @@ InputMoveCursorLeft:
 	rts
 .endproc
 
-.include "kbd/readkey_repeat.s"
-.include "string/petscii_to_screen.s"
-
-;.segment "DATA"
+;.data
 
 ; When a key is pressed this function is called before
 ; the character is added to the string.
@@ -404,15 +401,22 @@ InputMoveCursorLeft:
 ; are handled internally.
 ;
 ; PARAMS:
-; AC - PETSCII char to be inserted
+; A - PETSCII char to be inserted
 ;
 ; RETURN;
-; AC - PETSCII char to be inserted
-; Y - 0 means the char is to be ignored
-;     1 the char is added to the string.
+; A - PETSCII char to be inserted
+; C - set means the char is to be ignored
+;     cleared, the char is added to the string.
+InputFilterPtr:	.word DefaultInputFilter
+
+;.bss
 InputCursorPos: .byte 0
 InputCurLen: .byte 0
 InputMaxLen: .byte 0
-InputFilterPtr:	.word DefaultInputFilter
+
+;.popseg
+
+.include "kbd/readkey_repeat.s"
+.include "string/petscii_to_screen.s"
 
 .endif ; _INPUT_INC

@@ -12,7 +12,8 @@
 .ifndef _PETSCII_TO_SCREEN_INC
 _PETSCII_TO_SCREEN_INC  = 1
 
-.segment "CODE"
+;.pushseg
+;.code
 
 .proc PETSCIIToScreen
 
@@ -32,5 +33,7 @@ _PETSCII_TO_SCREEN_INC  = 1
 	rts
 
 .endproc
+
+;.popseg
 
 .endif ; _PETSCII_TO_SCREEN_INC

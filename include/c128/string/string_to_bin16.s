@@ -14,7 +14,8 @@
 .ifndef _STRING_TO_DEC16_INC
 _STRING_TO_DEC16_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc StringToBin16
 
@@ -85,10 +86,12 @@ _STRING_TO_DEC16_INC = 1
 	rts
 .endproc
 
-.include "math/mult16x16.s"
-
-;.segment "DATA"
+;.bss
 
 StringLenSave: .byte 0
+
+;.popseg
+
+.include "math/mult16x16.s"
 
 .endif ; _STRING_TO_DEC16_INC

@@ -12,7 +12,8 @@
 .ifndef _MEMSET_INC
 _MEMSET_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc memset
 
@@ -57,5 +58,7 @@ _MEMSET_INC = 1
 	pla
 	rts
 .endproc
+
+;.popseg
 
 .endif ; _MEMSET_INC

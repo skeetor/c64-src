@@ -124,9 +124,7 @@ _OPENFILE_INC = 1
 
 .endproc
 
-;.pushseg
 ;.data
-
 DeviceChannel: .byte 5
 
 ;.bss

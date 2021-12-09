@@ -15,7 +15,8 @@ _TRANSLATEKEY_INC = 1
 
 .include "tools/misc.inc"
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 KEY_NONE		= 	$00
 KEY_SHIFT_LEFT	=	$01
@@ -245,17 +246,7 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 	rts
 .endproc
 
-; This is only needed to provide the Keyline buffer
-;.include "kbd/scankeys.s"
-
-;.segment "DATA"
-
-; Contains bit flags for the Modifier keys
-; like SHIFT
-KeyModifier: .byte 0
-
-; The keycode without the modifier keys.
-KeyCode: .byte 0
+;.data
 
 ; Default are the normal pointers to the keycode
 ; tables in the kernel.
@@ -264,5 +255,16 @@ KeytableShift:		.word $fad9
 KeytableCommodore:	.word $fb32
 KeytableControl:	.word $fb8b
 KeytableAlt:		.word $fbe4
+
+;.bss
+
+; Contains bit flags for the Modifier keys
+; like SHIFT
+KeyModifier: .byte 0
+
+; The keycode without the modifier keys.
+KeyCode: .byte 0
+
+;.popseg
 
 .endif ; _TRANSLATEKEY_INC

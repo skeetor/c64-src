@@ -19,15 +19,16 @@ CONSOLE_PTR			= SCREEN_PTR	; $e0
 
 ZP_BASE				= $40
 ZP_BASE_LEN			= $0f
-FILENAME_PTR		= ZP_BASE+0
-DATA_PTR			= ZP_BASE+0	
-STRING_PTR			= ZP_BASE+2
-KEYMAP_PTR			= ZP_BASE+4
-MEMCPY_SRC			= ZP_BASE+6
-MEMCPY_TGT			= ZP_BASE+8
-MEMCPY_LEN			= ZP_BASE+10
-MEMCPY_LEN_LO		= ZP_BASE+10
-MEMCPY_LEN_HI		= ZP_BASE+11
+
+MEMCPY_SRC			= ZP_BASE+0
+MEMCPY_TGT			= ZP_BASE+2
+MEMCPY_LEN			= ZP_BASE+4
+MEMCPY_LEN_LO		= ZP_BASE+4
+MEMCPY_LEN_HI		= ZP_BASE+5
+FILENAME_PTR		= ZP_BASE+6
+DATA_PTR			= ZP_BASE+6	
+STRING_PTR			= ZP_BASE+8
+KEYMAP_PTR			= ZP_BASE+10
 CURSOR_LINE			= ZP_BASE+12
 PIXEL_LINE			= ZP_BASE+14
 
@@ -237,78 +238,6 @@ basicstub:
 	rts
 .endproc
 
-.ifdef SHOW_DEBUG_SPRITE
-.proc CreateDebugSprite
-	ldy #SPRITE_BUFFER_LEN-1
-	lda #255
-
-@InitSprite:
-	sta SPRITE_USER_START,y
-	dey
-	bpl @InitSprite
-
-	lda #0
-	sta SPRITE_USER_START+1
-	sta SPRITE_USER_START+(3*20)+1
-
-	lda #$7f
-	sta SPRITE_USER_START+(3*7)
-	sta SPRITE_USER_START+(3*8)
-	sta SPRITE_USER_START+(3*9)
-	sta SPRITE_USER_START+(3*10)
-	sta SPRITE_USER_START+(3*11)
-	sta SPRITE_USER_START+(3*12)
-	sta SPRITE_USER_START+(3*13)
-
-	lda #$fe
-
-	sta SPRITE_USER_START+(3*7)+2
-	sta SPRITE_USER_START+(3*8)+2
-	sta SPRITE_USER_START+(3*9)+2
-	sta SPRITE_USER_START+(3*10)+2
-	sta SPRITE_USER_START+(3*11)+2
-	sta SPRITE_USER_START+(3*12)+2
-	sta SPRITE_USER_START+(3*13)+2
-
-	lda #0					; A - Source frame
-	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
-	jsr CopySpriteFrame
-	jmp DrawBitMatrix
-.endproc
-
-.else ; SHOW_DEBUG_SPRITE
-
-.proc CreateWelcomeSprite
-	ldy #SPRITE_BUFFER_LEN-1
-
-@Loop:
-	lda WelcomeSpriteData,y
-	sta SPRITE_USER_START,y
-	dey
-	bpl @Loop
-
-	lda #0					; A - Source frame
-	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
-	jsr CopySpriteFrame
-	jsr DrawBitMatrix
-	jsr ToggleMulticolor
-	jsr TogglePreviewX
-
-	lda WelcomeColor
-	sta SpriteColorValue
-	jsr SetSpriteColor1
-	lda WelcomeColor+1
-	sta SpriteColorValue+1
-	jsr SetSpriteColor2
-	lda WelcomeColor+2
-	sta SpriteColorValue+2
-	jsr SetSpriteColor3
-
-	rts
-.endproc
-
-.endif ; SHOW_DEBUG_SPRITE
-
 .proc Setup
 
 	MAIN_APPLICATION_LEN = (MAIN_APPLICATION_END-MAIN_APPLICATION)
@@ -401,9 +330,11 @@ basicstub:
 	sta SPRITE_EXP_X
 	sta SPRITE_EXP_Y
 
-	; Init the default pointers
+	; Init the default pointers and values
 	SetPointer (EditorKeyboardHandler), EditorKeyHandler
 	SetPointer (STATUS_LINE), EnterNumberConsolePtr
+	SetPointer 10000, ExportFirstLineNr
+	SetPointer    10, ExportStepSize
 
 	lda #8
 	sta DeviceNumber
@@ -468,6 +399,88 @@ basicstub:
 	rts
 .endproc
 
+.proc SetMainExit
+	lda #$01
+	sta MainExitFlag
+	rts
+.endproc
+
+.include "mem/memcpy.s"
+.include "mem/memset.s"
+
+; FARCALL is used to call a function
+; across the bank boundaries.
+; A/X/Y are passed to the function
+; as provided by the caller.
+; The function to be called must be
+; stored in the FARCALL_PTR. 
+.proc FARCALL
+
+	; We need AC here, so we have to save it
+	; in order to be able to pass it on to the
+	; FARCALL.
+	pha
+
+	; Switch to the new memory layout
+	lda FARCALL_MEMCFG
+	sta MMU_PRE_CRC
+	sta MMU_LOAD_CRC
+	pla
+
+	jsr FarCaller
+
+@SysRestore:
+
+	sta MMU_LOAD_CRD	; Switch back to our bank
+
+	rts
+.endproc
+
+.proc FarCaller
+	jmp (FARCALL_PTR)
+.endproc
+
+.proc memcpy255
+	dey
+
+@Loop:
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+
+	dey
+	bne @Loop
+	lda (MEMCPY_SRC),y
+	sta (MEMCPY_TGT),y
+
+	rts
+.endproc
+
+; This data has to be here so we can cleanly exit after
+; moving the code.
+FARCALL_PTR:		.word 0		; Pointer to function in other bank
+FARCALL_MEMCFG:		.byte 0		; Bank config to switch to
+FARCALL_RESTORE:	.byte 0		; Bank config we need switch back to
+
+MMUConfig: .res $0b, 0
+ZPSafe: .res $10,0
+ScreenCol: .byte $00, $00
+RelocationFlag: .byte $00
+MainExitFlag: .byte 0
+LockFlag: .byte 0
+
+IRQVector: .word 0
+
+; Address of the entry stub. This is only the initialization
+; part which will move the main application up to MAIN_APP_BASE
+; so  we can use the space between $2000 and MAIN_APP_BASE
+; for our sprite frames.
+; If more frames are needed, we could move it further up
+; by increasing MAIN_APP_BASE.
+MAIN_APPLICATION_LOAD = *
+
+.org MAIN_APP_BASE
+MAIN_APPLICATION = *
+
 .proc IRQHandler
 	; Switch to our editor config with hi kernel enabled
 	sta MMU_LOAD_CRD
@@ -511,47 +524,6 @@ basicstub:
 	sta $0315
 	cli
 	rts
-.endproc
-
-.proc SetMainExit
-	lda #$01
-	sta MainExitFlag
-	rts
-.endproc
-
-.include "mem/memcpy.s"
-.include "mem/memset.s"
-
-; FARCALL is used to call a function
-; across the bank boundaries.
-; A/X/Y are passed to the function
-; as provided by the caller.
-; The function to be called must be
-; stored in the FARCALL_PTR. 
-.proc FARCALL
-
-	; We need AC here, so we have to save it
-	; in order to be able to pass it on to the
-	; FARCALL.
-	pha
-
-	; Switch to the new memory layout
-	lda FARCALL_MEMCFG
-	sta MMU_PRE_CRC
-	sta MMU_LOAD_CRC
-	pla
-
-	jsr FarCaller
-
-@SysRestore:
-
-	sta MMU_LOAD_CRD	; Switch back to our bank
-
-	rts
-.endproc
-
-.proc FarCaller
-	jmp (FARCALL_PTR)
 .endproc
 
 ; Copy the kernel key decoding tables to our memory
@@ -622,46 +594,78 @@ basicstub:
 	rts
 .endproc
 
-.proc memcpy255
+
+.ifdef SHOW_DEBUG_SPRITE
+.proc CreateDebugSprite
+	ldy #SPRITE_BUFFER_LEN-1
+	lda #255
+
+@InitSprite:
+	sta SPRITE_USER_START,y
 	dey
+	bpl @InitSprite
+
+	lda #0
+	sta SPRITE_USER_START+1
+	sta SPRITE_USER_START+(3*20)+1
+
+	lda #$7f
+	sta SPRITE_USER_START+(3*7)
+	sta SPRITE_USER_START+(3*8)
+	sta SPRITE_USER_START+(3*9)
+	sta SPRITE_USER_START+(3*10)
+	sta SPRITE_USER_START+(3*11)
+	sta SPRITE_USER_START+(3*12)
+	sta SPRITE_USER_START+(3*13)
+
+	lda #$fe
+
+	sta SPRITE_USER_START+(3*7)+2
+	sta SPRITE_USER_START+(3*8)+2
+	sta SPRITE_USER_START+(3*9)+2
+	sta SPRITE_USER_START+(3*10)+2
+	sta SPRITE_USER_START+(3*11)+2
+	sta SPRITE_USER_START+(3*12)+2
+	sta SPRITE_USER_START+(3*13)+2
+
+	lda #0					; A - Source frame
+	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
+	jsr CopySpriteFrame
+	jmp DrawBitMatrix
+.endproc
+
+.else ; SHOW_DEBUG_SPRITE
+
+.proc CreateWelcomeSprite
+	ldy #SPRITE_BUFFER_LEN-1
 
 @Loop:
-	lda (MEMCPY_SRC),y
-	sta (MEMCPY_TGT),y
-
+	lda WelcomeSpriteData,y
+	sta SPRITE_USER_START,y
 	dey
-	bne @Loop
-	lda (MEMCPY_SRC),y
-	sta (MEMCPY_TGT),y
+	bpl @Loop
+
+	lda #0					; A - Source frame
+	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
+	jsr CopySpriteFrame
+	jsr DrawBitMatrix
+	jsr ToggleMulticolor
+	jsr TogglePreviewX
+
+	lda WelcomeColor
+	sta SpriteColorValue
+	jsr SetSpriteColor1
+	lda WelcomeColor+1
+	sta SpriteColorValue+1
+	jsr SetSpriteColor2
+	lda WelcomeColor+2
+	sta SpriteColorValue+2
+	jsr SetSpriteColor3
 
 	rts
 .endproc
 
-; This data has to be here so we can cleanly exit after
-; moving the code.
-FARCALL_PTR:		.word 0		; Pointer to function in other bank
-FARCALL_MEMCFG:		.byte 0		; Bank config to switch to
-FARCALL_RESTORE:	.byte 0		; Bank config we need switch back to
-
-MMUConfig: .res $0b, 0
-ZPSafe: .res $10,0
-ScreenCol: .byte $00, $00
-RelocationFlag: .byte $00
-MainExitFlag: .byte 0
-LockFlag: .byte 0
-
-IRQVector: .word 0
-
-; Address of the entry stub. This is only the initialization
-; part which will move the main application up to MAIN_APP_BASE
-; so  we can use the space between $2000 and MAIN_APP_BASE
-; for our sprite frames.
-; If more frames are needed, we could move it further up
-; by increasing MAIN_APP_BASE.
-MAIN_APPLICATION_LOAD = *
-
-.org MAIN_APP_BASE
-MAIN_APPLICATION = *
+.endif ; SHOW_DEBUG_SPRITE
 
 .proc ClearWelcome
 	lda #$00
@@ -2918,6 +2922,10 @@ MAIN_APPLICATION = *
 ; filename which is used in all saving dialogs
 ; A prefix must be set so the user knows which
 ; save method he uses.
+;
+; RETURN:
+; C - set if canceled
+;
 .proc InitSaveDlg
 	; Copy the current edit buffer to the sprite frame buffer
 	ldx CurFrame
@@ -2993,9 +3001,10 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta FrameNumberStart
 	sta FrameNumberCur
-	sta BackupLen
 
 	SetPointer SpriteSaveProgress, WriteFileProgressPtr
+	lda #'s'
+	sta FileType
 	jsr SaveFile
 	bcs :+				; Error was already shown
 
@@ -3007,28 +3016,15 @@ MAIN_APPLICATION = *
 	jmp ClearStatusLines
 
 @Cancel:
+.endproc
+
+.proc ShowCancel
 	; Print cancel text in status line
 	SetPointer CanceledTxt, STRING_PTR
 	jmp ShowStatusLine
 .endproc
 
 .proc SpriteSaveProgress
-
-	SetPointer (INPUT_LINE), CONSOLE_PTR
-
-	ldy BackupLen
-	beq @DoProgress
-
-@RestoreLoop:
-	lda LineBackup,y
-	sta (CONSOLE_PTR),y
-	dey
-	bpl @RestoreLoop
-
-	iny
-	sty BackupLen
-
-@DoProgress:
 
 	; We have to reset the pointers, just in case.
 	; If the user was asked to overwrite the
@@ -3453,6 +3449,10 @@ MAIN_APPLICATION = *
 	; range limits.
 	; if (v < min || v > max)
 	;	error
+	;
+	; Hi < Min: RangeError
+	; Hi = Min: Lo-Byte decides
+	; Hi > Min: Lo-Byte is not needed
 
 	; V < Min?
 	cpx EnterNumberMinVal HI
@@ -3618,6 +3618,7 @@ MAIN_APPLICATION = *
 ; and if not, to enter a new filename.
 ;
 ; PARAM:
+; FileType - 's' for SEQ or 'p' for PRG
 ; Filename - Filename in PETSCII
 ; FilenameLen - Length of the filename
 ; MEMCPY_SRC	- Startadress
@@ -3627,20 +3628,6 @@ MAIN_APPLICATION = *
 ; RETURN:
 ; Carry - set on error
 .proc SaveFile
-
-	lda CONSOLE_PTR
-	sta ConsolePtrBackup
-	lda CONSOLE_PTR HI
-	sta ConsolePtrBackup HI
-
-	ldy #SCREEN_COLUMNS-1
-	sty BackupLen
-
-@BackupLoop:
-	lda (CONSOLE_PTR),y
-	sta LineBackup,y
-	dey
-	bpl @BackupLoop
 
 @Retry:
 	ldx DeviceNumber
@@ -3652,30 +3639,95 @@ MAIN_APPLICATION = *
 
 	SetPointer Filename, FILENAME_PTR
 
-	lda #'s'
-	sta FileType
 	lda #'w'			; Write mode
 	ldy #2				; Fileno
 	ldx DeviceNumber	; Device
 	jsr OpenFile
 	bcc @Write			; Open worked
 
+	jsr CheckOverwrite
+	bcc @Retry
+	bcs @Error
+
+@Write:
+	ldx #2
+	jsr WriteFile
+	bcs @Error
+
+@Close:
+	jsr SaveFileCleanup
+	clc
+	rts
+
+@Error:
+	jsr FileError
+
+@Cancel:
+	jsr SaveFileCleanup
+	sec
+	rts
+.endproc
+
+.proc SaveFileCleanup
+
+	lda #2
+	jsr CloseFile
+
+	ldx DeviceNumber
+	jsr CloseDiscStatus
+
+	rts
+.endproc
+
+; Internal Routine for SaveFile. This will check if the
+; disc error code is FILE EXISTS. If not, then it was a
+; different error and should be handled by the caller.
+; Otherwise the user is asked if he wants to overwrite
+; the file. If Y, the file is delete, otherwise a new
+; filename is asked.
+;
+; RETURN:
+; C - Clear if save operation should be retried, either
+;     because the file was deleted, or a new filename was
+;     enterd. The Z flag in this case is undefined.
+;     Set if an error occured or the request was canceled.
+;
+; Z - Set if C set. The user canceled the operation.
+;     Clear if C set. Any other error than FILE_EXISTS
+;     which should be handled by the caller.
+;
+.proc CheckOverwrite
 	; Check if file exists error
 	lda DiscStatusCode
 	cmp #63
 	bne @Error			; Some other error
 
+	lda CONSOLE_PTR
+	sta ConsolePtrBackup
+	lda CONSOLE_PTR HI
+	sta ConsolePtrBackup HI
+
+	; Backup the current line, so we can make use of it.
+	ldy #SCREEN_COLUMNS-1
+
+@BackupLoop:
+	lda INPUT_LINE,y
+	sta LineBackup,y
+	dey
+	bpl @BackupLoop
+
 	; If file exists we have to check for overwriting
 	jsr OverwriteFileDlg
 	bcs @Cancel
-	bne @DeleteFile	; User answered Y, so the file should be deleted
+	bne @DeleteFile		; User answered Y, so the file should be deleted
 
 	; When entering 'N' The user is asked for a new filename
 	jsr EnterFilename
 	bcs @Cancel
 
-	jsr @Cleanup
-	jmp @Retry			; Try again with new filename
+	jsr @Cancel
+	clc
+	rts					; Try again with new filename
 
 @DeleteFile:
 	SetPointer INPUT_LINE, CONSOLE_PTR
@@ -3690,40 +3742,38 @@ MAIN_APPLICATION = *
 	ldx FilenameLen
 	jsr PrintPETSCII
 
-	jsr @Cleanup
+	jsr SaveFileCleanup
 	jsr DeleteFile
-	jmp @Retry		; Try again with after file was deleted.
 
-@Write:
-	ldx #2
-	jsr WriteFile
-	bcs @Error
-
-@Close:
-	jsr @Cleanup
+	jsr @Restore
 	clc
-	rts
-
-@Error:
-	jsr FileError
+	rts					; Try again after file was deleted.
 
 @Cancel:
-	jsr @Cleanup
+	jsr SaveFileCleanup
+	jsr @Restore
+	lda #$00
 	sec
 	rts
 
-@Cleanup:
-	lda #2
-	jsr CloseFile
+@Error:
+	lda #$01
+	sec
+	rts
 
-	ldx DeviceNumber
-	jsr CloseDiscStatus
+@Restore:
+	ldy #SCREEN_COLUMNS-1
+
+@RestoreLoop:
+	lda LineBackup,y
+	sta INPUT_LINE,y
+	dey
+	bpl @RestoreLoop
 
 	lda ConsolePtrBackup
 	sta CONSOLE_PTR
 	lda ConsolePtrBackup HI
 	sta CONSOLE_PTR HI
-
 	rts
 .endproc
 
@@ -3731,6 +3781,7 @@ MAIN_APPLICATION = *
 ; file.
 ;
 ; PARAM:
+; FileType - 's' for SEQ or 'p' for PRG
 ; Filename - Filename in PETSCII
 ; FilenameLen - Length of the filename
 ; MEMCPY_SRC	- Startadress
@@ -3750,8 +3801,6 @@ MAIN_APPLICATION = *
 	sta STATUS
 
 	SetPointer Filename, FILENAME_PTR
-	lda #'s'
-	sta FileType
 	lda #'r'			; Read mode
 	ldy #2				; Fileno
 	ldx DeviceNumber	; Device
@@ -3872,6 +3921,8 @@ MAIN_APPLICATION = *
 	jsr PrintFrameCounter
 
 	SetPointer SpriteLoadProgress, ReadFileProgressPtr
+	lda #'s'
+	sta FileType
 	jsr LoadFile
 	bcc @Success
 
@@ -3905,12 +3956,11 @@ MAIN_APPLICATION = *
 	dec MaxFrame
 	jsr MoveCursorHome
 	jsr UpdateFrameEditor
-	jmp ClearStatusLines
+	jsr ClearStatusLines
+	rts
 
 @Cancel:
-	; Print cancel text in status line
-	SetPointer CanceledTxt, STRING_PTR
-	jmp ShowStatusLine
+	jmp ShowCancel
 .endproc
 
 .proc SpriteLoadProgress
@@ -3944,18 +3994,166 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc ExportBasicData
+.proc ExportBasicDataDlg
 	SetPointer ExportTxt, STRING_PTR
 	jsr InitSaveDlg
+	lbcs @Done
 
 	SetPointer ExportBasicTxt, STRING_PTR
 	ldy #$00
 	jsr PrintStringZ
 
+	; Linenr range = 1 - 60000
+	SetPointer     1, EnterNumberMinVal
+	SetPointer 60000, EnterNumberMaxVal
+	CopyPointer ExportFirstLineNr, EnterNumberCurVal
+
+	; LineNr
+	SetPointer (INPUT_LINE+4), CONSOLE_PTR
+	lda #5
+	sta EnterNumberMaxDigits
+	jsr InputNumber
+	lbcs @Cancel
+	stx ExportFirstLineNr HI
+	sta ExportFirstLineNr
+
+	; Stepsize
+	SetPointer (INPUT_LINE+15), CONSOLE_PTR
+	CopyPointer ExportStepSize, EnterNumberCurVal
+	lda #4
+	sta EnterNumberMaxDigits
+	jsr InputNumber
+	lbcs @Cancel
+	stx ExportStepSize HI
+	sta ExportStepSize
+
+	; Pretty/Compressed
+	SetPointer (INPUT_LINE+33), CONSOLE_PTR
+	SetPointer ExportPretty, STRING_PTR
+	SetPointer ExportPrettyFilter, InputFilterPtr
+	ldx #$43				; 'C'
+	stx ExportPretty
+	ldx #1
+	ldy #1
+	jsr Input
+	bcs @Cancel
+
+	lda ExportPretty
+	ldy #$00
+	sty ExportPretty
+	cmp #$43
+	bne @OpenFile
+	dec ExportPretty
+
+@OpenFile:
+	jsr ExportBasicFile
+
+@Done:
+	SetPointer DefaultInputFilter, InputFilterPtr
+	SetPointer DefaultWriteProgess, WriteFileProgressPtr
+	jsr ClearStatusLines
+
+	rts
+
+@Cancel:
+	jsr @Done
+	jmp ShowCancel
+.endproc
+
+.proc ExportBasicFile
+	SetPointer INPUT_LINE, CONSOLE_PTR
+
+	ldy #0
+	jsr ClearLine
+
+	SetPointer ExportTxt, STRING_PTR
+	ldy #0
+	jsr PrintStringZ
+
+	SetPointer FrameTxt, STRING_PTR
+	jsr PrintStringZ
+
+	lda CONSOLE_PTR
+	sta STRING_PTR
+	lda CONSOLE_PTR HI
+	sta STRING_PTR HI
+	lda FrameNumberStart
+	ldx FrameNumberEnd
+	jsr PrintFrameCounter
+
+@Retry:
+	ldx DeviceNumber
+	jsr OpenDiscStatus
+	bcs @Error
+
+	lda #$00
+	sta STATUS
+
+	SetPointer Filename, FILENAME_PTR
+
+	lda #'p'
+	sta FileType
+	lda #'w'			; Write mode
+	ldy #2				; Fileno
+	ldx DeviceNumber	; Device
+	jsr OpenFile
+	bcc @InitExport		; Open worked
+
+	jsr CheckOverwrite
+	bcc @Retry
+	bcs @Error
+
+@InitExport:
+	; Since we are writing blockwise on our own
+	; we don't really need a progress function here.
+	SetPointer DefaultWriteProgess, WriteFileProgressPtr
+
+	SetPointer LineBackup, MEMCPY_SRC
+	SetPointer (LineBackup+2), MEMCPY_TGT
+
+	SetPointer (__LOADADDR__), LineBackup
+
+	; Write BASIC start address.
+	ldx #2
+	jsr WriteFile
+	bcs @Error
+
+@Close:
+	jsr SaveFileCleanup
+	clc
+	rts
+
+@Error:
+	jsr FileError
+
+@Cancel:
+	jsr SaveFileCleanup
+	sec
 	rts
 .endproc
 
-; Library includes
+.proc ExportPrettyFilter
+	tay
+	lda KeyModifier
+	bne @Invalid
+
+	tya
+	cmp #$43				; 'C'
+	beq @Valid
+
+	cmp #$50				; 'P'
+	beq @Valid
+
+@Invalid:
+	sec
+	rts
+
+@Valid:
+	clc
+	rts
+.endproc
+
+; Library imports
 SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/keyboard_pressed.s"
 .include "kbd/keyboard_released.s"
@@ -4089,7 +4287,7 @@ SpriteEditorKeyMap:
 	DefineKey 0, $0d, NO_REPEAT_KEY, MoveCursorNextLine				; ENTER
 	DefineKey 0, $43, NO_REPEAT_KEY, CopyFromFrame					; C
 	DefineKey 0, $44, NO_REPEAT_KEY, DeleteCurrentFrame				; D
-	DefineKey 0, $45, NO_REPEAT_KEY, ExportBasicData				; E
+	DefineKey 0, $45, NO_REPEAT_KEY, ExportBasicDataDlg				; E
 	DefineKey 0, $46, NO_REPEAT_KEY, FlipVertical					; F
 	DefineKey 0, $47, NO_REPEAT_KEY, GotoFrame						; G
 	DefineKey 0, $49, NO_REPEAT_KEY, InvertGrid						; I
@@ -4201,6 +4399,12 @@ FrameNumberStartLo: .byte 0
 FrameNumberStartHi: .byte 0
 FrameNumberEndHi: .byte 0
 
+ExportFirstLineNr: .word 0
+ExportCurLineNr: .word 0
+ExportLineNr: .word 0
+ExportStepSize: .word 0
+ExportPretty: .byte 0		; $00 - pretty, $ff - compressed
+
 EnterNumberStrLen = 7
 EnterNumberStr: .res EnterNumberStrLen
 EnterNumberMaxDigits: .byte 0
@@ -4231,7 +4435,6 @@ SymKeytableCommodore:	.res KeyTableLen
 SymKeytableControl:		.res KeyTableLen
 SymKeytableAlt:			.res KeyTableLen
 
-BackupLen: .byte 0
 ConsolePtrBackup: .word 0
 LineBackup: .res BASIC_MAX_LINE_LEN
 LineBackupLen = SCREEN_COLUMNS

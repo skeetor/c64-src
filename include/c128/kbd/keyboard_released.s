@@ -5,13 +5,16 @@
 .ifndef _KEYBOARD_RELEASED_INC
 _KEYBOARD_RELEASED_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc WaitKeyboardRelease
 	jsr ScanKeys
 	bcs WaitKeyboardRelease
 	rts
 .endproc
+
+;.popseg
 
 .include "kbd/scankeys.s"
 

@@ -13,7 +13,8 @@
 .ifndef _READKEY_REPEAT_INC
 _READKEY_REPEAT_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc ReadKeyRepeat
 
@@ -80,16 +81,21 @@ _READKEY_REPEAT_INC = 1
 	rts
 .endproc
 
-.include "kbd/translate_key.s"
-.include "kbd/keyboard_pressed.s"
-
-;.segment "DATA"
+;.data
 
 KeyPressDelay: 	.byte 0, 3	; Delay when the key is pressed the first time
 KeyRepeatDelay: .byte 60, 1	; Repeat delay while the key is held
-KeyDelayCount:	.byte 0, 0
 
+;.bss
+
+KeyDelayCount:	.byte 0, 0
 LastKeyModifier: .byte 0
 LastKeyCode: .byte 0
+
+;.popseg
+
+.include "kbd/translate_key.s"
+.include "kbd/keyboard_pressed.s"
+
 
 .endif ; _READKEY_REPEAT_INC

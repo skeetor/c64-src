@@ -11,7 +11,8 @@
 .ifndef _SCANKEYS_INC
 _SCANKEYS_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 ; Read the keyboard 11x8 matrix. For each line the current
 ; state is stored in KeyLine[i].
@@ -100,11 +101,14 @@ _SCANKEYS_INC = 1
 .endproc
 
 ; **********************************************
-;.segment "DATA"
+
+;.bss
 
 ; Keyboard handling
 KeyTmp: .byte 0
 KeyLine: .res KEY_LINES,$00
 KeyPressed : .byte 0
+
+;.popseg
 
 .endif ; _SCANKEYS_INC

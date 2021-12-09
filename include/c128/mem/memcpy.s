@@ -22,7 +22,8 @@
 .ifndef _MEMCPY_INC
 _MEMCPY_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc memcpy
 	sta MEMCPY_LEN_HI
@@ -69,11 +70,13 @@ _MEMCPY_INC = 1
 	rts
 .endproc
 
-.include "mem/memcpy_forward.s"
-.include "mem/memcpy_reverse.s"
-
-;.segment "DATA"
+;.bss
 
 MemMoveEnd: .word 0
+
+;.popseg
+
+.include "mem/memcpy_forward.s"
+.include "mem/memcpy_reverse.s"
 
 .endif ; _MEMCPY_INC

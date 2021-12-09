@@ -131,7 +131,7 @@ _BCDTOSTRING_INC = 1
 
 .endproc
 
-;.data
+;.bss
 
 ; Internal use
 

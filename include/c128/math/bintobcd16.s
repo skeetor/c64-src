@@ -8,7 +8,8 @@
 .ifndef _BINTOBCD16_INC
 _BINTOBCD16_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc BinToBCD16
 
@@ -41,10 +42,12 @@ _BINTOBCD16_INC = 1
 .endproc
 
 ; **********************************************
-;.segment "DATA"
+;.bss
 
 ; Binary to decimal conversion
 BINVal: .word 0
 BCDVal: .byte 0, 0, 0
+
+;.popseg
 
 .endif ; _BINTOBCD16_INC

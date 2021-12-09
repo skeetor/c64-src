@@ -5,13 +5,16 @@
 .ifndef _KEYBOARD_PRESSED_INC
 _KEYBOARD_PRESSED_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc WaitKeyboardPressed
 	jsr ScanKeys
 	bcc WaitKeyboardPressed
 	rts
 .endproc
+
+;.popseg
 
 .include "kbd/scankeys.s"
 

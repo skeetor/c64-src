@@ -18,7 +18,8 @@
 .ifndef _PRINTPETSCII_INC
 _PRINTPETSCII_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc PrintPETSCII
 
@@ -42,11 +43,13 @@ _PRINTPETSCII_INC = 1
 	rts
 .endproc
 
-.include "string/petscii_to_screen.s"
-
-;.segment "DATA"
+;.bss
 
 PSTR_CHARINDEX: .byte 0
 PSTR_POS: .byte 0
+
+;.popseg
+
+.include "string/petscii_to_screen.s"
 
 .endif ; _PRINTPETSCII_INC

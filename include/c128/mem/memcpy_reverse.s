@@ -12,7 +12,8 @@
 .ifndef _MEMCOPY_REVERSE_INC
 _MEMCOPY_REVERSE_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc MemCopyReverse
 
@@ -71,5 +72,7 @@ _MEMCOPY_REVERSE_INC = 1
 @Done:
 	rts
 .endproc
+
+;.popseg
 
 .endif ; _MEMCOPY_REVERSE_INC

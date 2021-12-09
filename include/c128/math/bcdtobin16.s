@@ -1,10 +1,10 @@
 ; https://codebase64.org/doku.php?id=base:more_hexadecimal_to_decimal_conversion
 
-
 .ifndef _BCDTOBIN16_INC
 _BCDTOBIN16_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc BCDToBin16
 
@@ -44,12 +44,14 @@ _BCDTOBIN16_INC = 1
 .endproc
 
 ; **********************************************
-;.segment "DATA"
+;.data
 
 ; Binary to decimal conversion
 hiInput:	.byte $00
 loInput:	.byte $01
 hiResult:	.byte $00
 loResult:	.byte $00
+
+;.popseg
 
 .endif ; _BCDTOBIN16_INC

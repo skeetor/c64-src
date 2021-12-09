@@ -9,7 +9,8 @@
 .ifndef _PRINTBINARY_INC
 _PRINTBINARY_INC = 1
 
-;.segment "CODE"
+;.pushseg
+;.code
 
 .proc PrintBinary
 	ldx #$07
@@ -33,5 +34,7 @@ _PRINTBINARY_INC = 1
 
 	rts
 .endproc
+
+;.popseg
 
 .endif ; _PRINTBINARY_INC
