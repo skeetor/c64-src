@@ -25,6 +25,7 @@ MEMCPY_TGT			= ZP_BASE+2
 MEMCPY_LEN			= ZP_BASE+4
 MEMCPY_LEN_LO		= ZP_BASE+4
 MEMCPY_LEN_HI		= ZP_BASE+5
+DATA_PTR_END		= ZP_BASE+4
 FILENAME_PTR		= ZP_BASE+6
 DATA_PTR			= ZP_BASE+6	
 STRING_PTR			= ZP_BASE+8
@@ -3786,7 +3787,7 @@ MAIN_APPLICATION = *
 
 @BackupLoop:
 	lda INPUT_LINE,y
-	sta LineBackup,y
+	sta LineMem,y
 	dey
 	bpl @BackupLoop
 
@@ -3839,7 +3840,7 @@ MAIN_APPLICATION = *
 	ldy #SCREEN_COLUMNS-1
 
 @RestoreLoop:
-	lda LineBackup,y
+	lda LineMem,y
 	sta INPUT_LINE,y
 	dey
 	bpl @RestoreLoop
@@ -4134,6 +4135,11 @@ MAIN_APPLICATION = *
 	jmp ShowCancel
 .endproc
 
+.macro AddBasicByte
+	sta LineMem,y
+	iny
+.endmacro
+
 .proc ExportBasicFile
 	SetPointer INPUT_LINE, CONSOLE_PTR
 
@@ -4153,12 +4159,13 @@ MAIN_APPLICATION = *
 	sta STRING_PTR HI
 	lda FrameNumberStart
 	ldx FrameNumberEnd
+	ldy #13
 	jsr PrintFrameCounter
 
 @Retry:
 	ldx DeviceNumber
 	jsr OpenDiscStatus
-	bcs @Error
+	lbcs @Error
 
 	lda #$00
 	sta STATUS
@@ -4174,20 +4181,89 @@ MAIN_APPLICATION = *
 	bcc @InitExport		; Open worked
 
 	jsr CheckOverwrite
-	bcc @Retry
-	bcs @Error
+	lbcc @Retry
+	lbcs @Error
 
 @InitExport:
 	; Since we are writing blockwise on our own
 	; we don't really need a progress function here.
 	SetPointer DefaultWriteProgess, WriteFileProgressPtr
 
-	SetPointer LineBackup, MEMCPY_SRC
-	SetPointer (LineBackup+2), MEMCPY_TGT
+	SetPointer LineMem, MEMCPY_SRC
+	SetPointer (LineMem+2), MEMCPY_TGT
 
-	SetPointer (__LOADADDR__), LineBackup
+	SetPointer (__LOADADDR__), LineMem
 
 	; Write BASIC start address.
+	ldx #2
+	jsr WriteFile
+	lbcs @Error
+
+	lda FrameNumberStart
+	sta FrameNumberCur
+	jsr CalcFramePointer	
+
+	lda FramePtr
+	sta DATA_PTR
+	lda FramePtr HI
+	sta DATA_PTR HI
+
+	lda ExportFirstLineNr
+	sta ExportCurLineNr
+	lda ExportFirstLineNr HI
+	sta ExportCurLineNr HI
+
+	; Initialize Link pointer
+	SetPointer (__LOADADDR__), LineMem
+
+@ExportLoop:
+	lda FrameNumberCur
+	sta ExportProgressFrame
+	jsr ExportProgress
+
+	bit ExportPretty
+	bpl @WritePretty
+
+	; Compressed data is written in a single
+	; block.
+	ldx FrameNumberEnd
+	inx
+	txa
+	jsr CalcFramePointer	
+
+	lda FramePtr
+	sta DATA_PTR_END
+	lda FramePtr HI
+	sta DATA_PTR_END HI
+
+	dec FrameNumberCur
+	jsr WriteMemoryDATA
+	jmp @Finalize
+
+@WritePretty:
+	SetPointer LineMem, MEMCPY_SRC
+	ldy #0
+	jsr WriteInfoLine
+	bcs @Error
+
+	jsr WritePrettySprite
+
+@NextFrame:
+	lda FrameNumberCur
+	cmp FrameNumberEnd
+	beq @Finalize
+
+	inc FrameNumberCur
+	jmp @ExportLoop
+
+@Finalize:
+	; Save empty link pointer as end of BASIC
+	ldy #0
+	lda #0
+	AddBasicByte
+	AddBasicByte
+	SetPointer LineMem, MEMCPY_SRC
+	SetPointer (LineMem+2), MEMCPY_TGT
 	ldx #2
 	jsr WriteFile
 	bcs @Error
@@ -4203,6 +4279,383 @@ MAIN_APPLICATION = *
 @Cancel:
 	jsr SaveFileCleanup
 	sec
+	rts
+.endproc
+
+; Write a memory block as data lines
+;
+; PARAM:
+; DATA_PTR
+; DATA_PTR_END
+; ExportCurLineNr
+; ExportStepSize
+;
+; RETURN:
+; C - set on error
+.proc WriteMemoryDATA
+	lda #$00
+	sta BINVal+1
+
+	lda FrameNumberStart
+	sta ExportProgressFrame
+
+	lda #SPRITE_BUFFER_LEN
+	sta ExportProgressIndex
+
+@WriteLine:
+	lda #$00
+	sta ExportCurIndex	; End of Line marker
+	sta ExportCurByte	; End of buffer marker
+
+	ldy #0
+	jsr CalcStringPointer
+
+	jsr IncBasicLineNr
+
+	lda #$83			; DATA
+	AddBasicByte
+	lda #' '
+	AddBasicByte
+
+@WriteDATAValue:
+	; Check if we reached the end of the memory
+	; we want to save.
+	lda DATA_PTR HI
+	cmp DATA_PTR_END HI
+	bne @NextVal
+	lda DATA_PTR
+	cmp DATA_PTR_END
+	bne @NextVal
+
+	inc ExportCurByte
+	jmp @Finalize
+
+@NextVal:
+	sty ExportTmp
+	ldy #0
+	lda (DATA_PTR),y
+	inc ExportCurIndex
+	ldy ExportTmp
+	sta BINVal
+	lda #3
+	ldx #0
+	jsr PrintDecimal
+	lda #','
+	AddBasicByte
+
+	; Next byte
+	clc
+	lda DATA_PTR
+	adc #1
+	sta DATA_PTR
+	lda DATA_PTR HI
+	adc #0
+	sta DATA_PTR HI
+
+	; Increase the frame number here. The progress
+	; is called for every written byte, but we write
+	; BASIC strings and not sprite bytes so
+	; the progress function has no idea which frame
+	; we are currently in.
+	dec ExportProgressIndex
+	bne @Cont
+
+	lda #SPRITE_BUFFER_LEN
+	sta ExportProgressIndex
+
+	lda STRING_PTR
+	sta ConsolePtrBackup
+	lda STRING_PTR HI
+	sta ConsolePtrBackup HI
+
+	tya
+	pha
+	inc FrameNumberCur
+	jsr ExportProgress
+	pla
+	tay
+
+	; Reset our string pointer after the export update
+	lda ConsolePtrBackup
+	sta STRING_PTR
+	lda ConsolePtrBackup HI
+	sta STRING_PTR HI
+
+@Cont:
+	; Y needs to still allow space for up to three 
+	; digits, the comma and the endbyte.
+	; Well, if the current byte is only one or two digits
+	; it might still fit, but that is to complicated to check.
+	cpy #$ff - 3 - 1 - 1
+	bcc @WriteDATAValue
+	beq @WriteDATAValue
+
+@Finalize:
+	; If current line is empty (previous was last byte
+	; and ended on a line boundary), we are done.
+	lda ExportCurIndex
+	beq @Done
+
+	dey		; Remove the last ','
+	lda #0
+	AddBasicByte
+
+	SetPointer LineMem, MEMCPY_SRC
+	jsr CalcLineEnding
+
+	ldx #2
+	jsr WriteFile
+	bcs @Error
+
+	; Did we reach the end of the buffer?
+	lda ExportCurByte
+	lbeq @WriteLine
+
+@Done:
+	clc
+
+@Error:
+	rts
+.endproc
+
+; This function is only needed for the compressed
+; export. In the pretty printer, we write each
+; frame seperately,so we can always update it
+; after each frame.
+.proc ExportProgress
+	SetPointer (INPUT_LINE), STRING_PTR
+	ldy #13
+	ldx FrameNumberCur
+	txa
+	ldx FrameNumberEnd
+	jsr PrintFrameCounter
+
+	clc
+	rts
+.endproc
+
+; Write a single frame as BASIC DATA
+;
+; PARAM:
+; DATA_PTR - Spriteframe
+; ExportCurLineNr
+; ExportStepSize
+;
+; RETURN:
+; C - set on error
+;
+.proc WritePrettySprite
+
+	lda #$00
+	sta ExportCurIndex
+	sta BINVal+1
+
+@WriteLine:
+	ldy #0
+	jsr CalcStringPointer
+
+	jsr IncBasicLineNr
+
+	lda #$83			; DATA
+	AddBasicByte
+	lda #' '
+	AddBasicByte
+
+	lda #3
+	sta ExportCurByte
+
+@WriteDATAValue:
+	sty ExportTmp
+	ldy ExportCurIndex
+	lda (DATA_PTR),y
+	inc ExportCurIndex
+	ldy ExportTmp
+	sta BINVal
+	lda #3
+	ldx #DEC_ALIGN_RIGHT
+	jsr PrintDecimal
+	lda #','
+	AddBasicByte
+	dec ExportCurByte
+	bne @WriteDATAValue
+
+	dey		; Remove the last ','
+	lda #0
+	AddBasicByte
+
+	SetPointer LineMem, MEMCPY_SRC
+	jsr CalcLineEnding
+
+	; Save the current DATA line
+	sty ExportTmp
+	ldx #2
+	jsr WriteFile
+	bcs @Error
+
+	ldy ExportTmp
+
+	; A sprite has only 3*7 bytes, but the
+	; spritepointer adresses 64 bytes, so
+	; we have to add a fake byte after the
+	; last sprite byte. This will make a POKE
+	; loop easier, because the FOR..NEXT can
+	; simply iterate on, without skipping this
+	; extra byte.
+	lda #SPRITE_BUFFER_LEN-1
+	cmp ExportCurIndex
+	bgt @WriteLine
+
+	; One extra byte
+	lda #1
+	sta ExportCurByte
+	dey
+	lda #','
+	AddBasicByte
+
+	lda #SPRITE_BUFFER_LEN
+	cmp ExportCurIndex
+	bne @WriteDATAValue
+
+	clc
+	lda DATA_PTR
+	adc #SPRITE_BUFFER_LEN
+	sta DATA_PTR
+	lda DATA_PTR HI
+	adc #0
+	sta DATA_PTR HI
+
+	clc
+
+@Error:
+	rts
+
+.endproc
+
+; Create the REM info line and save it.
+.proc WriteInfoLine
+	lda #0
+	sta BINVal+1
+
+@SaveInfoLine:
+	jsr IncBasicLineNr
+
+	lda #$8f			; REM
+	AddBasicByte
+	lda #' '
+	AddBasicByte
+
+	ldx #0
+
+@FrameTxtCopy:
+	lda FramePETSCIITxt,x
+	AddBasicByte
+	inx
+	cpx #FramePETSCIITxtLen
+	bne @FrameTxtCopy
+
+	SetPointer LineMem, STRING_PTR
+
+	; Add current frame number
+	ldx FrameNumberCur
+	inx					; 1..N
+	stx BINVal
+	lda #3
+	ldx #0
+	jsr PrintDecimal
+
+	lda #'/'
+	AddBasicByte
+
+	ldx FrameNumberEnd
+	inx					; 1..N
+	stx BINVal
+	lda #3
+	ldx #0
+	jsr PrintDecimal
+
+	; End of Line marker
+	lda #0
+	AddBasicByte
+
+	jsr CalcLineEnding
+
+	; ... and save the line.
+	ldx #2				; FileNo
+	jsr WriteFile
+
+	rts
+.endproc
+
+.proc CalcLineEnding
+	; y points now beyond the end of line, so we
+	; can calculate the link pointer
+	tsx
+	tya
+	pha
+	clc
+	lda LineMem
+	adc $0100,x
+	sta LineMem
+	lda LineMem HI
+	adc #0
+	sta LineMem HI
+
+	; Now set the line length end address ...
+	clc
+	lda MEMCPY_SRC
+	adc $0100,x
+	sta MEMCPY_TGT
+	lda MEMCPY_SRC HI
+	adc #$00
+	sta MEMCPY_TGT HI
+	pla
+
+	rts
+.endproc
+
+; Set the current linenumber after the link pointer
+; and increase the line nr by STEP size.
+;
+; RETURN:
+; Y - points after line number
+;
+.proc IncBasicLineNr
+	ldy #2				; Skip link pointer for now
+
+	tya
+	lda ExportCurLineNr
+	AddBasicByte
+	lda ExportCurLineNr HI
+	AddBasicByte
+
+	; Increase line number by STEP size
+	clc
+	lda ExportCurLineNr
+	adc ExportStepSize
+	sta ExportCurLineNr
+	lda ExportCurLineNr HI
+	adc ExportStepSize HI
+	sta ExportCurLineNr HI
+	rts
+.endproc
+
+; Calculate the current line pointer based on
+; y as offset
+; 
+.proc CalcStringPointer
+	tya
+
+	tsx
+	pha
+	clc
+	lda #<LineMem
+	adc $0100,x
+	sta STRING_PTR
+	lda #>LineMem
+	adc #$00
+	sta STRING_PTR HI
+	pla
+
 	rts
 .endproc
 
@@ -4265,6 +4718,9 @@ EnterNumberErrorMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberErrorMsgLen = *-EnterNumberErrorMsg
 
 MaxFrameValue: .word MAX_FRAMES
+FramePETSCIITxt: .byte "frame: "
+FramePETSCIITxtLen = * - FramePETSCIITxt
+
 FrameTxt: .byte "FRAME:  1/  1",0
 FrameTxtOnlyLen = 6
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
@@ -4288,7 +4744,7 @@ EmptyFilenameTxt: .byte "FILENAME CAN NOT BE EMPTY!",0
 DriveTxt:		.byte "DRIVE: ",0
 MaxFramesReachedTxt: .byte "MAX. # OF FRAMES REACHED!",0
 FileExistsTxt: .byte "FILE EXISTS! OVERWRITE? N",0
-ExportBasicTxt: .byte "LNR: 1000 STEP: 100 CMPR/PRETTY: C",0
+ExportBasicTxt: .byte "LNR: 1000 STEP:  10 CMPR/PRETTY: C",0
 
 ErrorDeviceNotPresentTxt: .byte "DEVICE NOT PRESENT",0
 ErrorDeviceNotPresentTxtLen = (*-ErrorDeviceNotPresentTxt)-1
@@ -4497,6 +4953,11 @@ ExportCurLineNr: .word 0
 ExportLineNr: .word 0
 ExportStepSize: .word 0
 ExportPretty: .byte 0		; $00 - pretty, $ff - compressed
+ExportCurIndex: .byte 0		; Index in framebuffer for export
+ExportCurByte: .byte 0		; Number of bytes to export
+ExportTmp: .byte 0
+ExportProgressIndex: .byte 0
+ExportProgressFrame: .byte 0
 
 EnterNumberStrLen = 7
 EnterNumberStr: .res EnterNumberStrLen
@@ -4529,8 +4990,8 @@ SymKeytableControl:		.res KeyTableLen
 SymKeytableAlt:			.res KeyTableLen
 
 ConsolePtrBackup: .word 0
-LineBackup: .res BASIC_MAX_LINE_LEN
-LineBackupLen = SCREEN_COLUMNS
+LineMem: .res BASIC_MAX_LINE_LEN
+LineMemLen = SCREEN_COLUMNS
 
 BSS_END = *
 
