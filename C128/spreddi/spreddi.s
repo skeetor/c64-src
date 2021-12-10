@@ -39,7 +39,7 @@ KEYTABLE_PTR		= $fb
 
 ; Position of the color text.
 COLOR_TXT_ROW		= 12
-COLOR_TXT_COLUMN	= 27
+COLOR_TXT_COLUMN	= 26
 
 ; Position of the character that shows the selected color 
 
@@ -813,6 +813,15 @@ MAIN_APPLICATION = *
 
 	sta VIC_SPR_MCOLOR
 
+	pha
+	lda SpriteColorValue+1
+	ldx #$00
+	jsr SetSpriteColor2
+	lda SpriteColorValue+2
+	ldx #$00
+	jsr SetSpriteColor3
+	pla
+
 	and #(1 << SPRITE_PREVIEW)
 	beq @SingleMode
 
@@ -871,7 +880,7 @@ MAIN_APPLICATION = *
 	inx
 	cpx TMP_VAL_1
 	ble @ColorSelection
-
+	
 	rts
 .endproc
 
@@ -880,10 +889,66 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SetSpriteColor1
+	COLOR1_POS = SCREEN_COLUMNS*COLOR_TXT_ROW+COLOR_TXT_COLUMN+8
+
+	SetPointer (SCREEN_VIC+COLOR1_POS+2), CONSOLE_PTR
+
 	lda SpriteColorValue
 	sta VIC_SPR0_COLOR+SPRITE_PREVIEW
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*COLOR_TXT_ROW+COLOR_TXT_COLUMN+8
-	rts
+	sta VIC_COLOR_RAM+COLOR1_POS
+	ldx #$01
+	jmp PrintSpriteColorName
+.endproc
+
+.proc PrintSpriteColorNameMC
+	tsx
+	pha
+	lda	VIC_SPR_MCOLOR
+	and #(1 << SPRITE_PREVIEW)
+	bne @Color
+
+	; Show empty colorname
+	ldx #$00
+
+@Color:
+	pla
+.endproc
+
+; Print the sprite color as name
+;
+; PARAM
+; A - color value
+; X - Clear color = 0
+; CONSOLE_PTR
+; STRING_PTR
+.proc PrintSpriteColorName
+	cpx #$00
+	bne @PrintName
+	lda #$10
+	bne @PrintEmpty
+
+@PrintName:
+	and #$0f
+@PrintEmpty:
+	tsx
+	pha
+	asl
+	clc
+	adc $0100,x
+	tax
+	pla
+	txa
+
+	clc
+	adc #<ColorNameTxt
+	sta STRING_PTR
+	lda #>ColorNameTxt
+	adc #0
+	sta STRING_PTR HI
+
+	ldy #0
+	ldx #3
+	jmp PrintString
 .endproc
 
 .proc IncSpriteColor2
@@ -891,10 +956,14 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SetSpriteColor2
+	COLOR2_POS = SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN+8
+
+	SetPointer (SCREEN_VIC+COLOR2_POS+2), CONSOLE_PTR
+
 	lda SpriteColorValue+1
 	sta VIC_SPR_MCOLOR0
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN+8
-	rts
+	sta VIC_COLOR_RAM+COLOR2_POS
+	jmp PrintSpriteColorNameMC
 .endproc
 
 .proc IncSpriteColor3
@@ -902,10 +971,15 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc SetSpriteColor3
+	COLOR3_POS = SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
+
+	SetPointer (SCREEN_VIC+COLOR3_POS+2), CONSOLE_PTR
+
 	lda SpriteColorValue+2
 	sta VIC_SPR_MCOLOR1
-	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+2)+COLOR_TXT_COLUMN+8
-	rts
+	sta VIC_COLOR_RAM+COLOR3_POS
+	
+	jmp PrintSpriteColorNameMC
 .endproc
 
 .proc HideCursor
@@ -4196,8 +4270,6 @@ FrameTxtOnlyLen = 6
 SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
 CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
-ColorTxt: .byte "COLOR:",0
-ColorTxtLen = *-ColorTxt-1
 
 WelcomeColor: .byte COL_GREEN, COL_RED, COL_WHITE
 SpriteColorDefaults: .byte COL_LIGHT_GREY, COL_GREEN, COL_BLUE
@@ -4224,6 +4296,27 @@ ErrorFileIOTxt: .byte "FILE I/O ERROR",0
 ErrorFileIOTxtLen = (*-ErrorFileIOTxt)-1
 
 CharPreviewTxt: .byte "CHARACTER PREVIEW",0
+
+ColorTxt: .byte "COLOR:",0
+ColorTxtLen = *-ColorTxt-1
+ColorNameTxt:
+	.byte "BLK"
+	.byte "WHT"
+	.byte "RED"
+	.byte "CYN"
+	.byte "PRP"
+	.byte "GRN"
+	.byte "BU1"
+	.byte "YLW"
+	.byte "ORN"
+	.byte "BRN"
+	.byte "LRD"
+	.byte "DGY"
+	.byte "MGY"
+	.byte "LGN"
+	.byte "BU2"
+	.byte "LGY"
+	.byte "   "
 
 WelcomeSpriteData:
 .if 0	; HAVE FUN
