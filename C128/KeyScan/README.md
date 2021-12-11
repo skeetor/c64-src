@@ -14,4 +14,3 @@ C128 = Native C128 mode<br>
 C64  = Native C64 mode<br>
 C128/C64 = Running on C128 in C64 mode.<br>
 <br>
-Note, that on a C64 it can not be run again and has to be reloaded while in C128 native it can be started as often as you want.<br>
