@@ -2,6 +2,11 @@
 <br>
 When the editor asks you to enter a value, you can always cancel the operation by pressing RUN/STOP to return to the editor<br>
 <br>
+Note! When you enter a value you have to alway press ENTER to accept the value, even for single character input!<br>
+<br>
+<b>Spreddi V1.0 Release Version on 2021.12.11</b><br>
+https://github.com/skeetor/c64-src<br>
+<br>
 <br>
 <b>Keys (* = not implemented)</b><br>
 <br>
@@ -20,7 +25,7 @@ These keys work in all editor modes<br>
 <b>C</b> - Copy from frame N to current<br>
 <b>D</b> - Delete current frame<br>
 <b>*SHIFT D</b> - Delete frame N..M (Make 7 frames, goto fr.5, del 1-1, cursor in wrong place<br>
-<b>*E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
+<b>E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>F</b> - Flip vertically<br>
 <b>SHIFT F</b> - Flip horizontally<br>
@@ -97,5 +102,5 @@ These keys work in all editor modes<br>
 
 ### <u><b>Done</b></u><br>
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
-* <s>Use .bss segment to remove uninitialized bytes from * binary</s><br>
+* <s>Use .bss segment to remove uninitialized bytes from binary</s><br>
 * <s>NoRepeat keys no longer working</s><br>

@@ -12,7 +12,7 @@
 
 ; Debug defines
 ;SHOW_DEBUG_SPRITE  = 1
-KEYBOARD_DEBUG_PRINT = 1
+;KEYBOARD_DEBUG_PRINT = 1
 
 ; Zeropage variables
 CONSOLE_PTR			= SCREEN_PTR	; $e0
@@ -105,7 +105,7 @@ REPEAT_KEY		= $80		; Editor can repeat this key (i.e. cursor keys)
 .segment "LOADADDR"
 .byte .LOBYTE( __LOADADDR__ ), .HIBYTE( __LOADADDR__ )
 
-.segment "CODE"
+.code
 
 _EntryPoint = MainEntry
 
@@ -4705,10 +4705,10 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "devices/writefile.s"
 .include "devices/deletefile.s"
 ; **********************************************
-.segment "DATA"
+.data
 ;                            1         2         3         4
 ;                  0123456789012345678901234567890123456789
-VersionTxt: .byte   "SPREDDI V0.80 BY GERHARD GRUBER 2021",0
+VersionTxt: .byte   "SPREDDI V1.00 BY GERHARD GRUBER 2021",0
 
 ; Saving/Loading
 FilenameDefaultTxt: .byte "spritedata"	; Filename is in PETSCII
@@ -4804,23 +4804,23 @@ WelcomeSpriteData:
 	.byte $00, $00, $00
 	.byte $00, $00, $00
 	.byte $00, $02, $00
-	.byte $20, $20, $00
+	.byte $08, $20, $00
 	.byte $00, $28, $20
 	.byte $00, $38, $00
-	.byte $08, $A8, $00
-	.byte $00, $A0, $00
+	.byte $08, $a8, $00
+	.byte $00, $a0, $00
 	.byte $00, $20, $00
 	.byte $00, $00, $00
 	.byte $00, $54, $00
-	.byte $01, $54, $00
-	.byte $01, $54, $00
-	.byte $01, $54, $00
-	.byte $01, $54, $00
-	.byte $01, $55, $00
-	.byte $01, $55, $00
-	.byte $F1, $55, $4C
-	.byte $3F, $FF, $FC
-	.byte $03, $FF, $C0
+	.byte $00, $54, $00
+	.byte $00, $54, $00
+	.byte $00, $54, $00
+	.byte $00, $54, $00
+	.byte $00, $55, $00
+	.byte $f1, $55, $4c
+	.byte $3f, $ff, $fc
+	.byte $03, $ff, $c0
+	.byte $00, $00, $00
 	.byte $00, $00, $00
 	.byte 0
 
