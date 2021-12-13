@@ -6,13 +6,19 @@
 .include "screenmap.inc"
 
 .include "c128_system.inc"
-.include "c128_system.inc"
+
 .include "tools/misc.inc"
 .include "tools/intrinsics.inc"
 
 ; Debug defines
 ;SHOW_DEBUG_SPRITE  = 1
-;KEYBOARD_DEBUG_PRINT = 1
+KEYBOARD_DEBUG_PRINT = 1
+
+.ifdef C64
+CMDR_SHIFT_LOCK		= $291
+.else
+CMDR_SHIFT_LOCK		= LOCKS
+.endif
 
 ; Zeropage variables
 CONSOLE_PTR			= SCREEN_PTR	; $e0
@@ -243,7 +249,7 @@ basicstub:
 
 	MAIN_APPLICATION_LEN = (MAIN_APPLICATION_END-MAIN_APPLICATION)
 
-	; Switch to default C128 config
+	; Switch to default C128 config. Doesn't hurt on C64
 	lda #$00
 	sta MainExitFlag
 	sta MMU_CR_IO
@@ -253,10 +259,10 @@ basicstub:
 	sei
 
 	; Save lock state and disable it
-	lda LOCKS
+	lda CMDR_SHIFT_LOCK
 	sta LockFlag
 	lda #$ff
-	sta LOCKS
+	sta CMDR_SHIFT_LOCK
 
 	; Save Zeropage
 	ldy #ZP_BASE_LEN
@@ -324,6 +330,7 @@ basicstub:
 	lda #SPRITE_BUFFER_LEN
 	sta Multiplier
 
+	jsr DetectSystem
 	jsr CopyKeytables
 
 	; Reset all sprite expansions
@@ -372,7 +379,7 @@ basicstub:
 	bpl @ZPRestore
 
 	lda LockFlag
-	sta LOCKS
+	sta CMDR_SHIFT_LOCK
 
 	cli
 
@@ -434,6 +441,53 @@ basicstub:
 
 	sta MMU_LOAD_CRD	; Switch back to our bank
 
+	rts
+.endproc
+
+.proc DetectSystem
+	lda #0
+	sta SystemMode
+
+	ldy #3
+@C64Check:
+	lda $eb81,y
+	cmp C64Id,y
+	bne @IsC128
+	dey
+	bpl @C64Check
+
+	; It's a C64, now check if it is a real one
+	lda SystemMode
+	ora #C64_MODE
+	sta SystemMode
+
+	; TODO: Will this also work on M65?
+	lda #$00
+	sta VIC_KBD_128
+	lda VIC_KBD_128
+	ldy #C64_MODE
+	cmp #$ff
+	beq @Done
+
+	lda SystemMode
+	ora #C128_MODE
+	sta SystemMode
+	jmp @Done
+
+@IsC128:
+	ldy #3
+@C128Check:
+	lda $eb81,y
+	cmp C64Id,y
+	bne @Done
+	dey
+	bpl @C128Check
+
+	lda SystemMode
+	ora #C128_MODE
+	sta SystemMode
+
+@Done:
 	rts
 .endproc
 
@@ -531,66 +585,70 @@ MAIN_APPLICATION = *
 ; so we can easily access it.
 .proc CopyKeytables
 
-	; Standard keytable without modifiers
-	SetPointer $fa80, MEMCPY_SRC
+	lda SystemMode
+	and #C64_MODE
+	beq @C128_KT
+
+	SetPointer KT_64_NORMAL, KeytableNormal
+	SetPointer KT_64_SHIFT, KeytableShift
+	SetPointer KT_64_COMMODORE, KeytableCommodore
+	SetPointer KT_64_CONTROL, KeytableControl
+	SetPointer KT_64_ALT, KeytableAlt
+
+	jmp @CopyTables
+
+@C128_KT:
+	SetPointer KT_128_NORMAL, KeytableNormal
+	SetPointer KT_128_SHIFT, KeytableShift
+	SetPointer KT_128_COMMODORE, KeytableCommodore
+	SetPointer KT_128_CONTROL, KeytableControl
+	SetPointer KT_128_ALT, KeytableAlt
+
+@CopyTables:
+	CopyPointer KeytableNormal, MEMCPY_SRC
 	SetPointer SymKeytableNormal, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	lda MEMCPY_TGT
-	sta KeytableNormal
-	lda MEMCPY_TGT HI
-	sta KeytableNormal HI
+	CopyPointer MEMCPY_TGT, KeytableNormal
 
 	; Shifted keys
-	SetPointer $fad9, MEMCPY_SRC
+	CopyPointer KeytableShift, MEMCPY_SRC
 	SetPointer SymKeytableShift, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	lda MEMCPY_TGT
-	sta KeytableShift
-	lda MEMCPY_TGT HI
-	sta KeytableShift HI
+	CopyPointer MEMCPY_TGT, KeytableShift
 
 	; Commodore keys
-	SetPointer $fb32, MEMCPY_SRC
+	CopyPointer KeytableCommodore, MEMCPY_SRC
 	SetPointer SymKeytableCommodore, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	lda MEMCPY_TGT
-	sta KeytableCommodore
-	lda MEMCPY_TGT HI
-	sta KeytableCommodore HI
+	CopyPointer MEMCPY_TGT, KeytableCommodore
 
 	; CTRL keys
-	SetPointer $fb8b, MEMCPY_SRC
+	CopyPointer KeytableControl, MEMCPY_SRC
 	SetPointer SymKeytableControl, MEMCPY_TGT
 
 	ldy #KeyTableLen
 	jsr memcpy255
-	lda MEMCPY_TGT
-	sta KeytableControl
-	lda MEMCPY_TGT HI
-	sta KeytableControl HI
+	CopyPointer MEMCPY_TGT, KeytableControl
+
+	; ALT keys
+	CopyPointer KeytableAlt, MEMCPY_SRC
+	SetPointer SymKeytableAlt, MEMCPY_TGT
+
+	ldy #KeyTableLen
+	jsr memcpy255
+	CopyPointer MEMCPY_TGT, KeytableAlt
 
 	; Unused keycode in the kernel
 	; but we want it, so we patch it 
 	lda #$a0
 	ldy #$00				; DEL
 	sta SymKeytableControl,y
-
-	; ALT keys
-	SetPointer $fbe4, MEMCPY_SRC
-	SetPointer SymKeytableAlt, MEMCPY_TGT
-
-	ldy #KeyTableLen
-	jsr memcpy255
-	lda MEMCPY_TGT
-	sta KeytableAlt
-	lda MEMCPY_TGT HI
-	sta KeytableAlt HI
 
 	rts
 .endproc
@@ -4709,6 +4767,10 @@ SCANKEYS_BLOCK_IRQ = 1
 ;                            1         2         3         4
 ;                  0123456789012345678901234567890123456789
 VersionTxt: .byte   "SPREDDI V1.00 BY GERHARD GRUBER 2021",0
+C64Id:	.byte $14, $0d, $1d, $88
+
+C128Id:	.word $fa80
+		.byte $14, $0d, $1d, $88
 
 ; Saving/Loading
 FilenameDefaultTxt: .byte "spritedata"	; Filename is in PETSCII
@@ -4862,6 +4924,8 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $93, NO_REPEAT_KEY, ClearGridHome			; CLEAR
 	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
 	DefineKey KEY_SHIFT|KEY_COMMODORE, $94, REPEAT_KEY, InsertLine	; CMDR-INS
+	DefineKey KEY_SHIFT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; SHIFT CMDR CRSR Up
+	DefineKey KEY_SHIFT|KEY_COMMODORE, $9d, REPEAT_KEY, ShiftGridLeft	; SHIFT CMDR CRSR Left
 
 	; COMMODORE keys
 	DefineKey KEY_COMMODORE, $aa, NO_REPEAT_KEY, AppendFrameCopy	; CMDR-N
@@ -4869,6 +4933,8 @@ SpriteEditorKeyMap:
 	DefineKey KEY_COMMODORE, $ae, REPEAT_KEY, ShiftGridDown			; CMDR-S
 	DefineKey KEY_COMMODORE, $b0, REPEAT_KEY, ShiftGridLeft			; CMDR-A
 	DefineKey KEY_COMMODORE, $ac, REPEAT_KEY, ShiftGridRight		; CMDR-D
+	DefineKey KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridDown			; CMDR CRSR-Down
+	DefineKey KEY_COMMODORE, $9d, REPEAT_KEY, ShiftGridRight		; CMDR CRSR-Right
 	DefineKey KEY_COMMODORE, $94, REPEAT_KEY, DeleteLine			; CMDR-DEL
 
 	; CONTROL keys
@@ -4903,6 +4969,7 @@ BSS_START = *
 ; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
 WelcomeDone: .word 0
+SystemMode:.byte 0				; C64/C128/M65
 
 TMP_VAL_0: .word 0
 TMP_VAL_1: .word 0

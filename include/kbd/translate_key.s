@@ -248,6 +248,19 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 
 ;.data
 
+KT_64_NORMAL		= $eb81
+KT_64_SHIFT			= $ebc2
+KT_64_COMMODORE		= $ec03
+KT_64_CONTROL		= $ec78
+KT_64_ALT			= $ec78	; Shouldn never happen
+
+KT_128_NORMAL		= $fa80
+KT_128_SHIFT		= $fad9
+KT_128_COMMODORE	= $fb32
+KT_128_CONTROL		= $fb8b
+KT_128_ALT			= $fbe4
+
+
 ; Default are the normal pointers to the keycode
 ; tables in the kernel.
 KeytableNormal:		.word $fa80

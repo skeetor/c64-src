@@ -8,6 +8,9 @@ _TOOLS_INC = 1
 
 .define HI +1
 
+C128_MODE			= %01
+C64_MODE			= %10
+
 ; SetPointer will set the pointer to the specified
 ; address.
 .macro  SetPointer   addrValue, Pointer
