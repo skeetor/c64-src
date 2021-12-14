@@ -115,7 +115,7 @@ READST				= $ffb7
 ; To be added to cc65
 LOCKS				= $f7
 STKEY				= $91		; Flag for STOP key. If pressed $ff otherwise $7f
-INP_NDX				= $d0		; Nuber of characters in keyboard buffer
+INP_NDX				= $d0		; Number of characters in keyboard buffer
 VIC_COLOR_RAM		= $d800
 
 ; MMU_CR = Configuration register

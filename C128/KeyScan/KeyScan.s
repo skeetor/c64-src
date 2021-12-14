@@ -489,7 +489,7 @@ C64ModeTxt: .byte " C128/C64",0
 SystemMode: .byte C128_MODE
 ZPSafe: .res $10,0
 
-Line00: .byte "CRSD  F5  F3  F1  F7CRSL  CR DEL",0
+Line00: .byte "CRSD  F5  F3  F1  F7CRSR  CR DEL",0
 		.byte "   0   0   0   0   0   0   0   0",0
 Line01: .byte " SHL   E   S   Z   4   A   W   3",0
 		.byte "   0   0   0   0   0   0   0   0",0
