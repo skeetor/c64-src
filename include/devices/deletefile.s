@@ -9,9 +9,6 @@
 .ifndef _DELETEFILE_INC
 _DELETEFILE_INC = 1
 
-;.pushseg
-;.code
-
 .proc DeleteFile
 	lda #'s'			; lowercase PETSCII 'S'
 	sta FilenameCommand
@@ -51,8 +48,6 @@ _DELETEFILE_INC = 1
 	sec
 	rts
 .endproc
-
-;.popseg
 
 .include "devices/openfile.s"
 .include "devices/closefile.s"

@@ -9,9 +9,6 @@
 .ifndef _PRINTHEX_INC
 _PRINTHEX_INC = 1
 
-;.pushseg
-;.code
-
 .proc PrintHex
 
 	ldx #$02
@@ -40,7 +37,5 @@ _PRINTHEX_INC = 1
 
 	rts
 .endproc
-
-;.popseg
 
 .endif ; _PRINTHEX_INC

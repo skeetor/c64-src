@@ -16,9 +16,6 @@
 .ifndef _WRITEFILE_INC
 _WRITEFILE_INC = 1
 
-;.pushseg
-;.code
-
 .proc WriteFile
 
 	ldy #$00
@@ -74,9 +71,11 @@ _WRITEFILE_INC = 1
 	rts
 .endproc
 
-;.data
+.pushseg
+.data
 
 WriteFileProgressPtr: .word DefaultWriteProgess
-;.popseg
+
+.popseg
 
 .endif ;_WRITEFILE_INC

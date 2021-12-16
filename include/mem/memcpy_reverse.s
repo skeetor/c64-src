@@ -12,9 +12,6 @@
 .ifndef _MEMCOPY_REVERSE_INC
 _MEMCOPY_REVERSE_INC = 1
 
-;.pushseg
-;.code
-
 .proc MemCopyReverse
 
 	lda MEMCPY_LEN_LO
@@ -72,7 +69,5 @@ _MEMCOPY_REVERSE_INC = 1
 @Done:
 	rts
 .endproc
-
-;.popseg
 
 .endif ; _MEMCOPY_REVERSE_INC

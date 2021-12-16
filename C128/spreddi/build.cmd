@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 if not exist "obj" mkdir obj
 if not exist "bin" mkdir bin
 
-set C1541_PATH=E:\Programme\WinVICE\3.1-x64\
+set C1541_PATH=e:\Programme\VICE-Win-3.1-x64\
 set "BUILD_128="
 set "BUILD_64="
 set "BUILD_TARGET="
@@ -39,7 +39,7 @@ goto build_src
 :build_src
 
 if "%BUILD_128%" EQU "True" (
-set SYSTEM_CONFIG="c128-asm.cfg"
+set SYSTEM_CONFIG="%PROJECT_NAME%-c128.cfg"
 set SYSTEM_DEFINE=c128
 
 echo Building %PROJECT_NAME%.s !SYSTEM_DEFINE!
@@ -48,7 +48,7 @@ ld65 -C !SYSTEM_CONFIG! -Ln obj\%PROJECT_NAME%-!SYSTEM_DEFINE!.vice -vm -m obj\%
 )
 
 if "%BUILD_64%" == "True" (
-set SYSTEM_CONFIG="c64-asm.cfg"
+set SYSTEM_CONFIG="%PROJECT_NAME%-c64.cfg"
 set SYSTEM_DEFINE=c64
 
 echo Building %PROJECT_NAME%.s !SYSTEM_DEFINE!

@@ -2,7 +2,7 @@
 <br>
 When the editor asks you to enter a value, you can always cancel the operation by pressing RUN/STOP to return to the editor<br>
 <br>
-Note! When you enter a value you have to alway press ENTER to accept the value, even for single character input!<br>
+Note! When you enter a value you always have to press ENTER to accept the value, even for single character input!<br>
 <br>
 <b>Spreddi V1.0 Release Version on 2021.12.11</b><br>
 https://github.com/skeetor/c64-src<br>
@@ -91,16 +91,16 @@ These keys work in all editor modes<br>
 
 * Refactor InputNumber to library
 * Refactor DrawGridMatrix seperate frameborder<br>
-* Port to C64<br>
 * Port to MEGA65<br>
-* Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
 * Mousesupport<br>
 * Discmenu<br>
+* Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
 * Big spritepreview, show 2x2 sprites<br>
 * Animation preview (forward/backward/cycle/etc.)<br>
-* Use DATA/BSS segments properly<br>
 
 ### <u><b>Done</b></u><br>
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
 * <s>Use .bss segment to remove uninitialized bytes from binary</s><br>
 * <s>NoRepeat keys no longer working</s><br>
+* <s>Port to C64</s><br>
+* <s>Use DATA/BSS segments properly</s><br>

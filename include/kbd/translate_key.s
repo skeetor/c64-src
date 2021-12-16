@@ -15,9 +15,6 @@ _TRANSLATEKEY_INC = 1
 
 .include "tools/misc.inc"
 
-;.pushseg
-;.code
-
 KEY_NONE		= 	$00
 KEY_SHIFT_LEFT	=	$01
 KEY_SHIFT_RIGHT	=	$02
@@ -246,7 +243,8 @@ KEY_EXT			=	$40	; One of the extended C128 keys were pressed
 	rts
 .endproc
 
-;.data
+.pushseg
+.data
 
 KT_64_NORMAL		= $eb81
 KT_64_SHIFT			= $ebc2
@@ -269,7 +267,7 @@ KeytableCommodore:	.word $fb32
 KeytableControl:	.word $fb8b
 KeytableAlt:		.word $fbe4
 
-;.bss
+.bss
 
 ; Contains bit flags for the Modifier keys
 ; like SHIFT
@@ -278,6 +276,6 @@ KeyModifier: .byte 0
 ; The keycode without the modifier keys.
 KeyCode: .byte 0
 
-;.popseg
+.popseg
 
 .endif ; _TRANSLATEKEY_INC

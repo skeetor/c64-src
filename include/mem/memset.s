@@ -12,9 +12,6 @@
 .ifndef _MEMSET_INC
 _MEMSET_INC = 1
 
-;.pushseg
-;.code
-
 .proc memset
 
 	ldy MEMCPY_LEN_LO
@@ -58,7 +55,5 @@ _MEMSET_INC = 1
 	pla
 	rts
 .endproc
-
-;.popseg
 
 .endif ; _MEMSET_INC

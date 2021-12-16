@@ -8,14 +8,11 @@
 .ifndef _CLOSEFILE_INC
 _CLOSEFILE_INC = 1
 
-;.pushseg
-;.code
 .proc CloseFile
 	jsr CLOSE
 	jsr CLRCH
 	clc
 	rts
 .endproc
-;.popseg
 
 .endif ;_CLOSEFILE_INC

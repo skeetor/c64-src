@@ -25,9 +25,6 @@ _PRINTDEC_INC = 1
 DEC_ALIGN_RIGHT		= $01
 DEC_LEADING_ZEROES	= $02
 
-;.pushseg
-;.code
-
 .proc PrintBCD
 	pha					; Number of digits
 	txa
@@ -110,8 +107,6 @@ DEC_LEADING_ZEROES	= $02
 	; A - 1 = Skip first digit.
 	jmp BCDToString
 .endproc
-
-;.popseg
 
 .include "math/bintobcd16.s"
 .include "string/bcdtostring.s"

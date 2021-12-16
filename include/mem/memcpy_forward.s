@@ -12,9 +12,6 @@
 .ifndef _MEMCOPY_FORWARD_INC
 _MEMCOPY_FORWARD_INC = 1
 
-;.pushseg
-;.code
-
 .proc MemCopyForward
 
 	ldy MEMCPY_LEN_LO
@@ -68,7 +65,5 @@ _MEMCOPY_FORWARD_INC = 1
 @Done:
 	rts
 .endproc
-
-;.popseg
 
 .endif ; _MEMCOPY_FORWARD_INC

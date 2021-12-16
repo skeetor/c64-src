@@ -9,9 +9,6 @@ _NUMBER_INPUT_FILTER_INC = 1
 
 .include "tools/intrinsics.inc"
 
-;.pushseg
-;.code
-
 .proc NumberInputFilter
 
 	tay
@@ -36,7 +33,5 @@ _NUMBER_INPUT_FILTER_INC = 1
 	sec
 	rts
 .endproc
-
-;.popseg
 
 .endif ; _NUMBER_INPUT_FILTER_INC
