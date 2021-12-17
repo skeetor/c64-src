@@ -3,8 +3,8 @@
 ; Written by Gerhard W. Gruber 07.12.2021
 ;
 
-.ifndef YN_INPUT_FILTER_INC
-YN_INPUT_FILTER_INC = 1
+.ifndef _YN_INPUT_FILTER_INC
+_YN_INPUT_FILTER_INC = 1
 
 .proc YNInputFilter
 
@@ -30,4 +30,4 @@ YN_INPUT_FILTER_INC = 1
 	rts
 .endproc
 
-.endif ; YN_INPUT_FILTER_INC
+.endif ; _YN_INPUT_FILTER_INC

@@ -209,7 +209,7 @@ basicstub:
 	ldy #2
 	jsr PrintStringZ
 
-	; Wait untile the first key is pressed and
+	; Wait until the first key is pressed and
 	; clear the welcome and statusline
 	jsr WaitKeyboardRelease
 	jsr WaitKeyboardPressed
@@ -355,6 +355,7 @@ basicstub:
 	SetPointer (STATUS_LINE), EnterNumberConsolePtr
 	SetPointer 10000, ExportFirstLineNr
 	SetPointer    10, ExportStepSize
+	SetPointer NumberRangeError, InputNumberErrorHandler
 
 	lda #8
 	sta DeviceNumber
@@ -814,11 +815,11 @@ MAIN_APPLICATION = *
 	ldy #26
 	jsr PrintStringZ
 
+	CopyPointer CONSOLE_PTR, STRING_PTR
 	SetPointer MAX_FRAMES, BINVal
-
 	lda #3				; Max 3 digits (one byte)
 	ldx #DEC_ALIGN_RIGHT
-	;iny
+	ldy #36
 	jsr PrintDecimal
 
 	; Cursor position
@@ -2421,7 +2422,7 @@ MAIN_APPLICATION = *
 	; always have to delete the default first, before the target
 	; can be entered.
 	lda #$01
-	sta EnterNumberEmpty
+	sta InputNumberEmpty
 
 	lda CurFrame
 	ldy #$00
@@ -2437,7 +2438,7 @@ MAIN_APPLICATION = *
 
 	; Reset the empty input flag to default.
 	lda #$00
-	sta EnterNumberEmpty
+	sta InputNumberEmpty
 
 	; User entered the current frame number?
 	cpy CurFrame
@@ -2490,7 +2491,7 @@ MAIN_APPLICATION = *
 	lda #1
 	sta FrameNumberStartLo
 	lda CurFrame
-	sta EnterNumberCurVal
+	sta InputNumberCurVal
 	lda MaxFrame
 	sta FrameNumberStartHi
 	sta FrameNumberEndHi
@@ -3243,7 +3244,7 @@ MAIN_APPLICATION = *
 
 	; Set Frame limits
 	lda #0
-	sta EnterNumberCurVal
+	sta InputNumberCurVal
 	sta FrameNumberStartLo
 	lda MaxFrame
 	sta FrameNumberStartHi
@@ -3284,7 +3285,7 @@ MAIN_APPLICATION = *
 ; FrameNumberEndHi		- Highest value for end range
 ;                         lowest value is the start value entered
 ; FramenumberOffset 	- First Input field
-; EnterNumberCurVal		- Current value of lowframe
+; InputNumberCurVal		- Current value of lowframe
 ;
 ; RETURN:
 ; Carry - set if canceled
@@ -3305,10 +3306,8 @@ MAIN_APPLICATION = *
 	ldy FramenumberOffset
 	jsr PrintFrameCounter
 
-	SetPointer EnterNumberStr, STRING_PTR
-
 	lda #3
-	sta EnterNumberMaxDigits
+	sta InputNumberMaxDigits
 
 	; Get low frame
 	clc
@@ -3320,7 +3319,7 @@ MAIN_APPLICATION = *
 	sta CONSOLE_PTR HI
 
 	ldx #1
-	lda EnterNumberCurVal
+	lda InputNumberCurVal
 	clc
 	adc #1
 	ldy MaxFrame
@@ -3399,7 +3398,7 @@ MAIN_APPLICATION = *
 	SetPointer (INPUT_LINE+33), CONSOLE_PTR
 
 	lda #$02
-	sta EnterNumberMaxDigits
+	sta InputNumberMaxDigits
 
 	lda DeviceNumber
 	ldx #8
@@ -3458,7 +3457,7 @@ MAIN_APPLICATION = *
 ; A - Framenumber to use as default
 ; Y - Offset of frame string.
 ; CONSOLE_PTR - position of the FRAME text.
-; EnterNumberMaxDigits - Length of input string (1...3)
+; InputNumberMaxDigits - Length of input string (1...3)
 ;
 ; RETURN:
 ; A - Lobyte of value
@@ -3472,7 +3471,7 @@ MAIN_APPLICATION = *
 	jsr PrintString
 
 	lda #3
-	sta EnterNumberMaxDigits
+	sta InputNumberMaxDigits
 
 	; Set intput cursor after the text.
 	clc
@@ -3513,7 +3512,7 @@ MAIN_APPLICATION = *
 ; X - MinValue
 ; Y - MaxValue
 ; CONSOLE_PTR - position of the input string
-; EnterNumberMaxDigits - Length of input string (1...3)
+; InputNumberMaxDigits - Length of input string (1...3)
 ;
 ; RETURN:
 ; A - Lobyte of value
@@ -3521,126 +3520,21 @@ MAIN_APPLICATION = *
 ; C - clear (OK) : set (CANCEL)
 ; If C is set the value in A is undefined and should not be used.
 .proc EnterNumberValue
-	sta EnterNumberCurVal
-	stx EnterNumberMinVal
-	sty EnterNumberMaxVal
+	sta InputNumberCurVal
+	stx InputNumberMinVal
+	sty InputNumberMaxVal
 
 	lda #$00
-	sta EnterNumberCurVal HI
-	sta EnterNumberMinVal HI
-	sta EnterNumberMaxVal HI
-
+	sta InputNumberCurVal HI
+	sta InputNumberMinVal HI
+	sta InputNumberMaxVal HI
+	jmp InputNumber
 .endproc
 
-; Input a number value which can be 0...65535
-;
-; PARAMS:
-; EnterNumberEmpty	0 - Print curValue as default. 1 - Leave string empty
-; EnterNumberCurVal
-; EnterNumberMinVal
-; EnterNumberMaxVal
-; EnterNumberMaxDigits
-; CONSOLE_PTR - position of the input string
-; EnterNumberMaxDigits - Length of input string (1...5)
-;
-; RETURN:
-; A - Lobyte of value
-; X - Hibyte of value
-; C - clear (OK) : set (CANCEL)
-; If C is set, the value in A is undefined and should not be used.
-.proc InputNumber
-	SetPointer NumberInputFilter, InputFilterPtr
+; Error handler for number input range error.
+; Just prints a message and allows the user to re-enter.
+.proc NumberRangeError
 
-@InputLoop:
-	SetPointer EnterNumberStr, STRING_PTR
-	ldy #EnterNumberStrLen-1
-						; 5 digits + clear the last
-						; byte to make sure the number
-						; conversion doesn't pick up a
-						; stray digit.
-	lda #' '
-
-@ClearString:
-	sta (STRING_PTR),y
-	dey
-	bpl @ClearString
-
-	lda EnterNumberEmpty
-	beq @PrintCurVal
-	ldx #$00
-	jmp @SkipPrint
-
-@PrintCurVal:
-	lda EnterNumberCurVal
-	sta BINVal
-	lda EnterNumberCurVal HI
-	sta BINVal HI
-
-	lda EnterNumberMaxDigits
-	ldx #0				; Left aligned
-	ldy #0
-	jsr PrintDecimal
-
-@SkipPrint:
-	ldy EnterNumberMaxDigits
-	jsr Input
-	bcs @Cancel			; User pressed cancel button
-	cpy #$00			; Empty string was entered
-	beq @RangeError
-
-	; String length of input string
-	tya
-	tax
-	jsr StringToBin16
-	sta EnterNumberCurVal
-	stx EnterNumberCurVal HI
-
-   ; X = HiByte
-   ; A = LoByte
-
-	; Check range of input against the
-	; range limits.
-	; if (v < min || v > max)
-	;	error
-	;
-	; Hi < Min: RangeError
-	; Hi = Min: Lo-Byte decides
-	; Hi > Min: Lo-Byte is not needed
-
-	; V < Min?
-	cpx EnterNumberMinVal HI
-	bcc @RangeError				; Hi < Min
-	bne @CheckMax				; Hi != Min
-	cmp EnterNumberMinVal
-	bcc @RangeError				; Lo < Min
-
-@CheckMax:
-	; V > Max?
-	cpx EnterNumberMaxVal HI
-	bcc @Accept					; Hi < Max
-	bne @RangeError				; Hi != Max
-
-	cmp EnterNumberMaxVal
-	beq @Accept					; Lo == Max
-	bcs @RangeError				; Lo >= Max
-
-@Accept:
-	jmp @Done
-
-@Cancel:
-	sec
-	bcs @Exit
-
-@Done:
-	clc
-
-@Exit:
-	pha
-	SetPointer DefaultInputFilter, InputFilterPtr
-	pla
-	rts
-
-@RangeError:
 	lda CONSOLE_PTR
 	pha
 	lda CONSOLE_PTR HI
@@ -3663,26 +3557,26 @@ MAIN_APPLICATION = *
 
 	; Print allowed range values
 	; Lower value
-	lda EnterNumberMinVal
+	lda InputNumberMinVal
 	sta BINVal
-	lda EnterNumberMinVal HI
+	lda InputNumberMinVal HI
 	sta BINVal HI
 
-	lda EnterNumberMaxDigits
+	lda InputNumberMaxDigits
 	ldx #0				; Left aligned
 	jsr PrintDecimal
 
 	; Upper value
-	lda EnterNumberMaxVal
+	lda InputNumberMaxVal
 	sta BINVal
-	lda EnterNumberMaxVal HI
+	lda InputNumberMaxVal HI
 	sta BINVal HI
 
 	lda #'/'
 	sta (CONSOLE_PTR),y
 	iny
 
-	lda EnterNumberMaxDigits
+	lda InputNumberMaxDigits
 	ldx #0				; Left aligned
 	jsr PrintDecimal
 
@@ -3697,7 +3591,8 @@ MAIN_APPLICATION = *
 	pla
 	sta CONSOLE_PTR
 
-	jmp @InputLoop
+	clc
+	rts
 .endproc
 
 ; Check if the specified file exists and ask
@@ -4157,14 +4052,14 @@ MAIN_APPLICATION = *
 	jsr PrintStringZ
 
 	; Linenr range = 1 - 60000
-	SetPointer     1, EnterNumberMinVal
-	SetPointer 60000, EnterNumberMaxVal
-	CopyPointer ExportFirstLineNr, EnterNumberCurVal
+	SetPointer     1, InputNumberMinVal
+	SetPointer 60000, InputNumberMaxVal
+	CopyPointer ExportFirstLineNr, InputNumberCurVal
 
 	; LineNr
 	SetPointer (INPUT_LINE+4), CONSOLE_PTR
 	lda #5
-	sta EnterNumberMaxDigits
+	sta InputNumberMaxDigits
 	jsr InputNumber
 	lbcs @Cancel
 	stx ExportFirstLineNr HI
@@ -4172,9 +4067,9 @@ MAIN_APPLICATION = *
 
 	; Stepsize
 	SetPointer (INPUT_LINE+15), CONSOLE_PTR
-	CopyPointer ExportStepSize, EnterNumberCurVal
+	CopyPointer ExportStepSize, InputNumberCurVal
 	lda #4
-	sta EnterNumberMaxDigits
+	sta InputNumberMaxDigits
 	jsr InputNumber
 	lbcs @Cancel
 	stx ExportStepSize HI
@@ -4765,6 +4660,7 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/keyboard_released_modignore.s"
 .include "kbd/keyboard_mapping.s"
 .include "kbd/input.s"
+.include "kbd/input_number.s"
 .include "kbd/number_input_filter.s"
 .include "kbd/y_n_input_filter.s"
 
@@ -5045,14 +4941,6 @@ ExportTmp: .byte 0
 ExportProgressIndex: .byte 0
 ExportProgressFrame: .byte 0
 
-EnterNumberStrLen = 7
-EnterNumberStr: .res EnterNumberStrLen
-EnterNumberMaxDigits: .byte 0
-EnterNumberEmpty: .byte 0		; 1 - InputNumber will not print the current value
-EnterNumberCurVal: .word 0
-EnterNumberMinVal: .word 0
-EnterNumberMaxVal: .word 0
-EnterNumberStringPtr: .word 0
 EnterNumberConsolePtr: .word 0	; Where to print the error message
 
 MoveFrameCnt: .byte 0
