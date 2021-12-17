@@ -89,9 +89,9 @@ These keys work in all editor modes<br>
     The order doesn't reflect the priority :)
 <br>
 
-* Refactor DrawGridMatrix seperate frameborder<br>
-* Port to MEGA65<br>
+* Move spriteeditor into a seperate source file<br>
 * Discmenu<br>
+* Port to MEGA65<br>
 * Mousesupport<br>
 * Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
 * Big spritepreview, show 2x2 sprites<br>
@@ -104,5 +104,6 @@ These keys work in all editor modes<br>
 * <s>Port to C64</s><br>
 * <s>Use DATA/BSS segments properly</s><br>
 * <s>Refactor InputNumber to library</s><br>
+* <s>Refactor DrawGridMatrix seperate frameborder</s><br>
 
 <br>

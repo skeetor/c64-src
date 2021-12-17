@@ -350,12 +350,14 @@ basicstub:
 	sta SPRITE_EXP_X
 	sta SPRITE_EXP_Y
 
-	; Init the default pointers and values
+	; Init the default pointers, constants and values
 	SetPointer (EditorKeyboardHandler), EditorKeyHandler
 	SetPointer (STATUS_LINE), EnterNumberConsolePtr
 	SetPointer 10000, ExportFirstLineNr
 	SetPointer    10, ExportStepSize
 	SetPointer NumberRangeError, InputNumberErrorHandler
+	lda #SCREEN_COLUMNS
+	sta BorderScreenWidth
 
 	lda #8
 	sta DeviceNumber
@@ -787,10 +789,6 @@ MAIN_APPLICATION = *
 	sta VIC_SPR_ENA		; Enable preview sprite
 
 	jsr UpdateFrameEditor
-
-	lda #CHAR_SPLIT_TOP
-	sta SCREEN_VIC+24+1
-
 	jsr SpritePreviewBorder
 
 	; Print the frame text
@@ -1939,58 +1937,53 @@ MAIN_APPLICATION = *
 .endproc
 
 ; =================================================
-; Draw the border frame. Color has already been set
-; and will not change.
+; Draw the border frame.
 ;
 ; ZP Usage:
 ; CONSOLE_PTR - pointer to screen
 ; TMP_VAL_0 - line counter
 .proc DrawScreenborder
 
-	; Draw the corners
-    lda #CHAR_ROUND_TOP_LEFT
-	sta SCREEN_VIC
-
-    lda #CHAR_ROUND_TOP_RIGHT
-	sta SCREEN_VIC+39
+	lda #CHAR_ROUND_TOP_LEFT
+	sta BorderTopLeft
+	lda #CHAR_ROUND_TOP_RIGHT
+	sta BorderTopRight
 	lda #CHAR_ROUND_BOT_LEFT
-	sta SCREEN_VIC+(SCREEN_COLUMNS*(SCREEN_LINES-1))
+	sta BorderBottomLeft
 	lda #CHAR_ROUND_BOT_RIGHT
-	sta SCREEN_VIC+(SCREEN_COLUMNS*SCREEN_LINES)-1
-
-	ldy #38
+	sta BorderBottomRight
 	lda #CHAR_HORIZONTAL
-
-	; Top and bottom border
-@HLoop:
-	sta SCREEN_VIC,y
-	sta SCREEN_VIC+(SCREEN_COLUMNS*(SCREEN_LINES-1)),y
-
-	dey
-	bne	@HLoop
-
-	; Left/right border
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS), CONSOLE_PTR
-
-	; Number of lines - 2 for Border. The last line will be used for character preview
+	sta BorderHorizontal
+	lda #CHAR_VERTICAL
+	sta BorderVertical
+	lda #SCREEN_COLUMNS
+	sta BorderWidth
 	lda #SCREEN_LINES-2
-	sta TMP_VAL_0
+	sta BorderHeight
 
-	ldx #CHAR_VERTICAL
+	SetPointer SCREEN_VIC, CONSOLE_PTR
+	jmp DrawBorder
+.endproc
 
-@VLoop:
-	txa
-	ldy #0
-	sta (CONSOLE_PTR),y
-	ldy #39
-	sta (CONSOLE_PTR),y
+; We assume that the border still contains the top
+; left, etc. characters, so we only update those that
+; actually change.
+.proc DrawMatrixBorder
 
-	jsr NextLine
+	lda #CHAR_SPLIT_TOP
+	sta BorderTopRight
+	lda #CHAR_SPLIT_BOT
+	sta BorderBottomRight
 
-	dec TMP_VAL_0
-	bne @VLoop
+	ldy EditColumns
+	iny
+	iny
+	sty BorderWidth
+	lda EditLines
+	sta BorderHeight
 
-    rts
+	SetPointer SCREEN_VIC, CONSOLE_PTR
+	jmp DrawBorder
 .endproc
 
 ; Switch to next line with the screen pointer in CONSOLE_PTR
@@ -2165,33 +2158,12 @@ MAIN_APPLICATION = *
 	dec EditCurColumns
 	bne @nextColumn
 
-	; Drawing part of the border is almost
-	; free here.
-	lda #CHAR_VERTICAL
-	sta (CONSOLE_PTR),y
-
 	jsr NextLine
 
 	dec EditCurLine
 	bne @nextLine
 
-	; We are already in the right position
-	; so we can just as well draw the bottom
-	; line here as well, without the need of
-	; doing extra calculations. Only the
-	; corners will have to be adjusted by the
-	; caller.
-	lda #CHAR_SPLIT_BOT
-	sta (CONSOLE_PTR),y
-	dey	
-	lda #CHAR_HORIZONTAL
-
-@bottomLine:
-	sta (CONSOLE_PTR),y
-	dey
-	bpl @bottomLine
-
-	rts
+	jmp DrawMatrixBorder
 .endproc
 
 ; Convert the current grid to memory binary
@@ -2285,8 +2257,7 @@ MAIN_APPLICATION = *
 	lda #$00
 	sta EditClearPreview
 
-	jsr ShowCursor
-	rts
+	jmp ShowCursor
 
 @OnlyCopy:
 	lda CurFrame
@@ -4665,6 +4636,8 @@ SCANKEYS_BLOCK_IRQ = 1
 .include "kbd/y_n_input_filter.s"
 
 .include "math/mult16x16.s"
+
+.include "terminal/draw_border.s"
 
 .include "string/printdec.s"
 .include "string/printstring.s"
