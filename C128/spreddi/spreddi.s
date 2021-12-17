@@ -12,7 +12,7 @@
 
 ; Debug defines
 ;SHOW_DEBUG_SPRITE  = 1
-KEYBOARD_DEBUG_PRINT = 1
+;KEYBOARD_DEBUG_PRINT = 1
 
 .ifdef C64
 CMDR_SHIFT_LOCK		= $291
@@ -48,7 +48,18 @@ KEYTABLE_PTR		= $fb
 COLOR_TXT_ROW		= 12
 COLOR_TXT_COLUMN	= 26
 
-; Position of the character that shows the selected color 
+;  Import segment definitions for relocation
+.export __LOADADDR__ = *
+.export STARTADDRESS = *
+
+.import __BASE_LOAD__
+.import __BASE_SIZE__
+.import __CODE_LOAD__
+.import __CODE_SIZE__
+.import __DATA_LOAD__
+.import __DATA_SIZE__
+.import __BSS_LOAD__
+.import __BSS_SIZE__
 
 ; Sprite editor constants
 ; =======================
@@ -66,9 +77,10 @@ SPRITE_BUFFER_LEN	= 64
 SPRITE_BASE			= $2000		; Sprite data pointer for preview.
 SPRITE_USER_START	= SPRITE_BASE+2*SPRITE_BUFFER_LEN	; First two sprite frames are reserved
 SPRITE_PREVIEW_BUFFER = SPRITE_BASE+(SPRITE_PREVIEW*SPRITE_BUFFER_LEN)
-SPRITE_END			= $5000
+SPRITE_END			= __CODE_LOAD__
 MAIN_APP_BASE		= SPRITE_END; Address where the main code is relocated to
-MAX_FRAMES			= ((MAIN_APP_BASE - SPRITE_USER_START)/SPRITE_BUFFER_LEN) ; The first frame
+
+MAX_FRAMES = <((__CODE_LOAD__-SPRITE_USER_START)/SPRITE_BUFFER_LEN)	; The first frame
 								; is used for our cursor sprite, so the first
 								; user sprite will start at SPRITE_BASE+SPRITE_BUFFER_LEN
 CURSOR_HOME_POS		= SCREEN_VIC+SCREEN_COLUMNS+1
@@ -105,13 +117,10 @@ EDITOR_COMMON_RAM_CFG	= %00000000 ; No common area
 NO_REPEAT_KEY	= $00		; Editor wont repeat this key default
 REPEAT_KEY		= $80		; Editor can repeat this key (i.e. cursor keys)
 
-.export __LOADADDR__ = *
-.export STARTADDRESS = *
-
 .segment "LOADADDR"
 .byte .LOBYTE( __LOADADDR__ ), .HIBYTE( __LOADADDR__ )
 
-.code
+.segment "BASE"
 
 _EntryPoint = MainEntry
 
@@ -247,7 +256,11 @@ basicstub:
 
 .proc Setup
 
-	MAIN_APPLICATION_LEN = (MAIN_APPLICATION_END-MAIN_APPLICATION)
+	MAIN_APPLICATION_LEN	= (__CODE_SIZE__+__DATA_SIZE__)
+	MAIN_APPLICATION_LOAD	= (__BASE_LOAD__+__BASE_SIZE__)
+	MAIN_APPLICATION		= __CODE_LOAD__
+	BSS_LEN					= __BSS_SIZE__
+	BSS_START				= __BSS_LOAD__
 
 	; Switch to default C128 config. Doesn't hurt on C64
 	lda #$00
@@ -321,7 +334,6 @@ basicstub:
 
 @SkipRelocation:
 
-	BSS_LEN = BSS_END - BSS_START
 	SetPointer BSS_LEN, MEMCPY_LEN
 	SetPointer BSS_START, MEMCPY_TGT
 	lda #$00
@@ -533,7 +545,8 @@ IRQVector: .word 0
 ; by increasing MAIN_APP_BASE.
 MAIN_APPLICATION_LOAD = *
 
-.org MAIN_APP_BASE
+.code
+;.org MAIN_APP_BASE
 MAIN_APPLICATION = *
 
 .proc IRQHandler
@@ -800,6 +813,13 @@ MAIN_APPLICATION = *
 
 	ldy #26
 	jsr PrintStringZ
+
+	SetPointer MAX_FRAMES, BINVal
+
+	lda #3				; Max 3 digits (one byte)
+	ldx #DEC_ALIGN_RIGHT
+	;iny
+	jsr PrintDecimal
 
 	; Cursor position
 	SetPointer CURSOR_HOME_POS, CURSOR_LINE
@@ -4785,7 +4805,7 @@ FramePETSCIITxtLen = * - FramePETSCIITxt
 
 FrameTxt: .byte "FRAME:  1/  1",0
 FrameTxtOnlyLen = 6
-SpriteFramesMaxTxt: .byte "# FRAMES:",.sprintf("%3u",MAX_FRAMES),0
+SpriteFramesMaxTxt: .byte "# FRAMES:",0
 CurFrame: .byte $00		; Number of active frame 0...MAX_FRAMES-1
 MaxFrame: .byte $00		; Maximum frame number in use 0..MAX_FRAMES-1
 
@@ -4958,13 +4978,12 @@ SpriteEditorKeyMap:
 	; End of map
 	DefineKey 0,0,0,0
 
+ENDMARKER: .byte "endmarker",0
+
 ; The applicaiton data ends here. After that is BSS data which
 ; does not need to be initialized and will be set to 0 on startup.
-MAIN_APPLICATION_END = *
 ;====================================================
 .bss
-
-BSS_START = *
 
 ; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
@@ -5059,7 +5078,5 @@ SymKeytableAlt:			.res KeyTableLen
 ConsolePtrBackup: .word 0
 LineMem: .res BASIC_MAX_LINE_LEN
 LineMemLen = SCREEN_COLUMNS
-
-BSS_END = *
 
 END:

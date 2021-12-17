@@ -26,9 +26,6 @@
 .ifndef _OPENFILE_INC
 _OPENFILE_INC = 1
 
-;.pushseg
-;.code
-
 .proc OpenFile	; Prepare filename by appending 
 
 	sta OpenMode
@@ -124,10 +121,11 @@ _OPENFILE_INC = 1
 
 .endproc
 
-;.data
+.pushseg
+.data
 DeviceChannel: .byte 5
 
-;.bss
+.bss
 DeviceNumber: .byte 0
 OpenMode: .byte 0
 FileType: .byte 0
@@ -139,7 +137,7 @@ Filename: .res 21			; Filename is in PETSCII
 FILENAME_LEN = *-Filename
 FILENAME_MAX = 16
 
-;.popseg
+.popseg
 
 .include "devices/closefile.s"
 

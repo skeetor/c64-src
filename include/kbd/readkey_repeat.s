@@ -13,9 +13,6 @@
 .ifndef _READKEY_REPEAT_INC
 _READKEY_REPEAT_INC = 1
 
-;.pushseg
-;.code
-
 .proc ReadKeyRepeat
 
 @WaitKeyPress:
@@ -81,18 +78,19 @@ _READKEY_REPEAT_INC = 1
 	rts
 .endproc
 
-;.data
+.pushseg
+.data
 
 KeyPressDelay: 	.byte 0, 3	; Delay when the key is pressed the first time
 KeyRepeatDelay: .byte 60, 1	; Repeat delay while the key is held
 
-;.bss
+.bss
 
 KeyDelayCount:	.byte 0, 0
 LastKeyModifier: .byte 0
 LastKeyCode: .byte 0
 
-;.popseg
+.popseg
 
 .include "kbd/translate_key.s"
 .include "kbd/keyboard_pressed.s"

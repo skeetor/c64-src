@@ -4,9 +4,6 @@
 .ifndef _MULT16X16_INC
 _MULT16X16_INC = 1
 
-;.pushseg
-;.code
-
 .proc Mult16x16
 
 	lda	#$00
@@ -37,13 +34,15 @@ _MULT16X16_INC = 1
 .endproc
 
 ; **********************************************
-;.bss
+
+.pushseg
+.bss
 
 ; 16x16 multiplication
 Multiplicand:	.byte 0, 0			; (A)
 Multiplier:		.byte 0, 0			; * (B)
 Product:		.byte 0, 0, 0, 0	; = (P)
 
-;.popseg
+.popseg
 
 .endif ; _MULT16X16_INC

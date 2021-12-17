@@ -34,9 +34,6 @@ _INPUT_INC = 1
 
 EMPTY_CHAR		= 100	; '_'
 
-;.pushseg
-;.code
-
 .proc Input
 	
 	sty InputMaxLen
@@ -409,12 +406,14 @@ InputMoveCursorLeft:
 ;     cleared, the char is added to the string.
 InputFilterPtr:	.word DefaultInputFilter
 
-;.bss
+.pushseg
+.bss
+
 InputCursorPos: .byte 0
 InputCurLen: .byte 0
 InputMaxLen: .byte 0
 
-;.popseg
+.popseg
 
 .include "kbd/readkey_repeat.s"
 .include "string/petscii_to_screen.s"

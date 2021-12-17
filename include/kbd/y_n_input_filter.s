@@ -6,9 +6,6 @@
 .ifndef YN_INPUT_FILTER_INC
 YN_INPUT_FILTER_INC = 1
 
-;.pushseg
-;.code
-
 .proc YNInputFilter
 
 	tay
@@ -32,7 +29,5 @@ YN_INPUT_FILTER_INC = 1
 	sec
 	rts
 .endproc
-
-;.popseg
 
 .endif ; YN_INPUT_FILTER_INC

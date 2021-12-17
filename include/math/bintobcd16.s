@@ -8,9 +8,6 @@
 .ifndef _BINTOBCD16_INC
 _BINTOBCD16_INC = 1
 
-;.pushseg
-;.code
-
 .proc BinToBCD16
 
 	sed				; Switch to decimal mode
@@ -42,12 +39,14 @@ _BINTOBCD16_INC = 1
 .endproc
 
 ; **********************************************
-;.bss
+
+.pushseg
+.bss
 
 ; Binary to decimal conversion
 BINVal: .word 0
 BCDVal: .byte 0, 0, 0
 
-;.popseg
+.popseg
 
 .endif ; _BINTOBCD16_INC

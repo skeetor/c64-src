@@ -4,9 +4,6 @@
 .ifndef _DIV16X16_INC
 _DIV16X16_INC = 1
 
-;.pushseg
-;.code
-
 .proc Div16
 
 	lda #$00		; preset remainder to 0
@@ -39,13 +36,15 @@ _DIV16X16_INC = 1
 .endproc
 
 ; **********************************************
-;.bss
+
+.pushseg
+.bss
 
 Divisor: .word 0
 Dividend: .word 0
 Remainder: .word 0
 DivResult: .byte 0
 
-;.popseg
+.popseg
 
 .endif ; _DIV16X16_INC

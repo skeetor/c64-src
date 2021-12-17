@@ -19,9 +19,6 @@
 .ifndef _PRINTSTRINGZ_INC
 _PRINTSTRINGZ_INC = 1
 
-;.pushseg
-;.code
-
 .proc PrintStringZ
 
 	sty STRZ_POS
@@ -43,11 +40,12 @@ _PRINTSTRINGZ_INC = 1
 
 .endproc
 
-;.bss
+.pushseg
+.bss
 
 STRZ_CHARINDEX: .byte 0
 STRZ_POS: .byte 0
 
-;.popseg
+.popseg
 
 .endif ; _PRINTSTRINGZ_INC

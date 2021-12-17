@@ -22,9 +22,6 @@
 .ifndef _READDISCSTATUS_INC
 _READDISCSTATUS_INC = 1
 
-;.pushseg
-;.code
-
 .proc OpenDiscStatus
 	lda #$00
 	sta STATUS
@@ -163,7 +160,9 @@ _READDISCSTATUS_INC = 1
 	rts
 .endproc
 
-;.bss
+.pushseg
+.bss
+
 DiscStatusCode: .byte 0
 DiscStatusDrive: .byte 0
 DiscStatusTrack: .byte 0
@@ -172,7 +171,7 @@ DiscStatusStringLen: .byte 0
 DiscStatusString: .res 40
 DISC_STATUS_MAX_LEN = (*-DiscStatusString)
 
-;.popseg
+.popseg
 
 .include "string/petscii_to_screen.s"
 

@@ -12,9 +12,6 @@
 .ifndef _KEYBOARD_RELEASED_MODIGNORE_INC
 _KEYBOARD_RELEASED_MODIGNORE_INC = 1
 
-;.pushseg
-;.code
-
 .proc WaitKeyboardReleaseIgnoreMod
 
 @WaitRelease:
@@ -55,8 +52,6 @@ _KEYBOARD_RELEASED_MODIGNORE_INC = 1
 @Done:
 	rts
 .endproc
-
-;.popseg
 
 .include "kbd/scankeys.s"
 

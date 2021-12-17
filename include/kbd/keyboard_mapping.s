@@ -32,9 +32,6 @@
 .ifndef _KEYBOARD_MAPPING_INC
 _KEYBOARD_MAPPING_INC = 1
 
-;.pushseg
-;.code
-
 ; NOTE: When defining a key assignment using SHIFT keys we can
 ; only use either KEY_SHIFT or KEY_SHIFT_LEFT/KEY_SHIFT_RIGHT.
 ; If KEY_SHIFT is set then LEFT/RIGHT is ignored for the comparison.
@@ -151,7 +148,8 @@ KEYMAP_SIZE = 5
 
 .endproc
 
-;.bss
+.pushseg
+.bss
 
 ; This map contains the modifier, keycode and the function to trigger
 KeyMapBasePtr: .word 0
@@ -162,6 +160,6 @@ KeyMapModifier: .byte 0	; Copy of KeyModifier to handle SHIFT flags
 ; before next key is read if bit 7 is set.
 KeyMapWaitRelease: .byte $00
 
-;.popseg
+.popseg
 
 .endif ; _KEYBOARD_MAPPING_INC

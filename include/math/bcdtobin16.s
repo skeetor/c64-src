@@ -3,9 +3,6 @@
 .ifndef _BCDTOBIN16_INC
 _BCDTOBIN16_INC = 1
 
-;.pushseg
-;.code
-
 .proc BCDToBin16
 
 	lda #$00        ; Init result bytes
@@ -44,7 +41,9 @@ _BCDTOBIN16_INC = 1
 .endproc
 
 ; **********************************************
-;.data
+
+.pushseg
+.data
 
 ; Binary to decimal conversion
 hiInput:	.byte $00
@@ -52,6 +51,6 @@ loInput:	.byte $01
 hiResult:	.byte $00
 loResult:	.byte $00
 
-;.popseg
+.popseg
 
 .endif ; _BCDTOBIN16_INC

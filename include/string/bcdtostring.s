@@ -32,9 +32,6 @@
 .ifndef _BCDTOSTRING_INC
 _BCDTOSTRING_INC = 1
 
-;.pushseg
-;.code
-
 .proc BCDToString
 
 	pha
@@ -131,7 +128,8 @@ _BCDTOSTRING_INC = 1
 
 .endproc
 
-;.bss
+.pushseg
+.bss
 
 ; Internal use
 
@@ -147,6 +145,6 @@ LeftAligned: .byte 0
 ; Return value: Number of digits printed. If leading zeroes are shown, they are included in the count.
 NumberOfDigits: .byte 0
 
-;.popseg
+.popseg
 
 .endif ; _BCDTOSTRING_INC

@@ -18,9 +18,6 @@
 .ifndef _PRINTSTRING_INC
 _PRINTSTRING_INC = 1
 
-;.pushseg
-;.code
-
 .proc PrintString
 
 	cpx #$00
@@ -46,11 +43,12 @@ _PRINTSTRING_INC = 1
 	rts
 .endproc
 
-;.bss
+.pushseg
+.bss
 
 STR_CHARINDEX: .byte 0
 STR_POS: .byte 0
 
-;.popseg
+.popseg
 
 .endif ; _PRINTSTRING_INC
