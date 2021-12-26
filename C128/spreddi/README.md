@@ -89,18 +89,22 @@ These keys work in all editor modes<br>
     The order doesn't reflect the priority :)
 <br>
 
-* Refactor InputNumber to library
-* Refactor DrawGridMatrix seperate frameborder<br>
+* Discmenu<br>
 * Port to MEGA65<br>
 * Mousesupport<br>
-* Discmenu<br>
 * Improve keyhandling by switching directly to map with respective primary modifier SHIFT,CMDR,CTRL, etc.<br>
 * Big spritepreview, show 2x2 sprites<br>
 * Animation preview (forward/backward/cycle/etc.)<br>
 
 ### <u><b>Done</b></u><br>
+
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
 * <s>Use .bss segment to remove uninitialized bytes from binary</s><br>
 * <s>NoRepeat keys no longer working</s><br>
 * <s>Port to C64</s><br>
 * <s>Use DATA/BSS segments properly</s><br>
+* <s>Refactor InputNumber to library</s><br>
+* <s>Refactor DrawGridMatrix seperate frameborder</s><br>
+* <s>Move spriteeditor into a seperate source file</s><br>
+
+<br>
