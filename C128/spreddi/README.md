@@ -24,7 +24,7 @@ These keys work in all editor modes<br>
 <br>
 <b>C</b> - Copy from frame N to current<br>
 <b>D</b> - Delete current frame<br>
-<b>*SHIFT D</b> - Delete frame N..M (Make 7 frames, goto fr.5, del 1-1, cursor in wrong place<br>
+<b>SHIFT D</b> - Delete frame N..M<br>
 <b>E</b> - Export as BASIC DATA program (Linenr, Step, Pretty/Compressed - Max. Line: 63999)<br>
 <b>I</b> - Invert edit matrix<br>
 <b>F</b> - Flip vertically<br>
@@ -89,7 +89,6 @@ These keys work in all editor modes<br>
     The order doesn't reflect the priority :)
 <br>
 
-* Move spriteeditor into a seperate source file<br>
 * Discmenu<br>
 * Port to MEGA65<br>
 * Mousesupport<br>
@@ -98,6 +97,7 @@ These keys work in all editor modes<br>
 * Animation preview (forward/backward/cycle/etc.)<br>
 
 ### <u><b>Done</b></u><br>
+
 * <s>Refactor keyboard functions to use Carry mechanism</s><br>
 * <s>Use .bss segment to remove uninitialized bytes from binary</s><br>
 * <s>NoRepeat keys no longer working</s><br>
@@ -105,5 +105,6 @@ These keys work in all editor modes<br>
 * <s>Use DATA/BSS segments properly</s><br>
 * <s>Refactor InputNumber to library</s><br>
 * <s>Refactor DrawGridMatrix seperate frameborder</s><br>
+* <s>Move spriteeditor into a seperate source file</s><br>
 
 <br>
