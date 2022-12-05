@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 if not exist "obj" mkdir obj
 if not exist "bin" mkdir bin
 
-set C1541_PATH=e:\Programme\VICE-Win-3.1-x64\
+set C1541_PATH=e:\Programme\VICE\VICE-Win-3.1-x64\
 set "BUILD_128="
 set "BUILD_64="
 set "BUILD_TARGET="

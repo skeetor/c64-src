@@ -172,6 +172,12 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	rts
 .endproc
 
+.proc IsMulticolor
+	lda	VIC_SPR_MCOLOR
+	and #(1 << SPRITE_PREVIEW)
+	rts
+.endproc
+
 .proc ToggleMulticolor
 	lda	VIC_SPR_MCOLOR
 	eor #(1 << SPRITE_PREVIEW)
@@ -188,10 +194,25 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	lda SpriteColorValue+2
 	ldx #$00
 	jsr SetSpriteColor3
-	pla
 
+	; Make sure that a double cursor is hidden.
+	ldx #$01
+	stx EditDoubleCursor
+	jsr HideCursor
+
+	; Set default as single cursor
+	dec EditDoubleCursor
+
+	pla
 	and #(1 << SPRITE_PREVIEW)
 	beq @SingleMode
+
+	; Make sure the cursor is on an even position
+	; and enable the double cursor
+	inc EditDoubleCursor
+	lda EditCursorX
+	and #$fe
+	sta EditCursorX
 
 	; Print three colors
 	lda #$01
@@ -199,11 +220,11 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	jmp @Print
 
 @SingleMode:
-	; Clear color 2+3
+	; Clear color 2+3+Selection
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+1)+COLOR_TXT_COLUMN), CONSOLE_PTR
 
 	lda #' '
-	ldx #2
+	ldx #3
 
 @ClearLine:
 	ldy #ColorTxtLen+2
@@ -218,21 +239,36 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	bne @ClearLine
 
 	; Print only color 1
-	lda #$01
 	ldx #1
 
 @Print:
+	jsr ShowCursor
+
+	SetPointer ColorTxt, STRING_PTR
+	jsr PrintSpriteColor
+
+	jsr IsMulticolor
+	beq @Done
+
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+3)), CONSOLE_PTR
+	SetPointer SelectedColorTxt, STRING_PTR
+	ldy #COLOR_TXT_COLUMN
+	jmp PrintStringZ
+
+@Done:
+	rts
 .endproc
 
 .proc PrintSpriteColor
 
 	; Print the color choice
-	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW)), CONSOLE_PTR
-	SetPointer ColorTxt, STRING_PTR
+	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*COLOR_TXT_ROW), CONSOLE_PTR
 	stx TMP_VAL_1
 	ldx #$01
 
-@ColorSelection:
+.endproc
+
+.proc PrintColorText
 	ldy #COLOR_TXT_COLUMN
 	jsr PrintStringZ
 	txa
@@ -247,7 +283,7 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 
 	inx
 	cpx TMP_VAL_1
-	ble @ColorSelection
+	ble PrintColorText
 	
 	rts
 .endproc
@@ -1612,12 +1648,69 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 
 .endproc
 
+.proc SelectMultiColor1
+	ldx #$01
+	jmp SetMultiColorValue
+.endproc
+
+.proc SelectMultiColor2
+	ldx #$02
+	jmp SetMultiColorValue
+.endproc
+
+.proc SelectMultiColor3
+	ldx #$03
+	jmp SetMultiColorValue
+.endproc
+
+.proc SelectMultiColor4
+	ldx #$00
+.endproc
+
+.proc UpdateSelectedColor
+
+	jsr IsMulticolor
+	bne @UpdateColor
+	rts
+
+@UpdateColor:
+	ldx MultiColorValue
+	jmp SetMultiColorValue
+
+.endproc
+
+; X = Color to use
+.proc SetMultiColorValue
+	stx MultiColorValue
+	txa
+	beq @SetColor
+	lda SpriteColorValue-1,x
+
+@SetColor:
+	COLOR_POS = SCREEN_COLUMNS*(COLOR_TXT_ROW+3)+COLOR_TXT_COLUMN+8
+	sta VIC_COLOR_RAM+COLOR_POS
+
+	rts
+.endproc
+
+.proc ToggleSpritePixel
+	jsr IsMulticolor
+	bne @ToggleMCPixel
+	jmp ToggleGridPixel
+
+@ToggleMCPixel:
+	rts
+
+.endproc
+
 ; **********************************************
 .data
 
 MaxFrameValue: .word MAX_FRAMES
 FramePETSCIITxt: .byte "frame: "
 FramePETSCIITxtLen = * - FramePETSCIITxt
+
+SelectedColorTxt: .byte "SELCT:  ",81,0
 
 FrameTxt: .byte "FRAME:  1/  1",0
 FrameTxtOnlyLen = 6
@@ -1654,7 +1747,7 @@ WelcomeSpriteData:
 SpriteEditorKeyMap:
 	DefineKey 0, $1d, REPEAT_KEY,    MoveCursorRight				; CRSR-Right
 	DefineKey 0, $11, REPEAT_KEY,    MoveCursorDown					; CRSR-Down
-	DefineKey 0, $20, REPEAT_KEY,    ToggleGridPixel				; SPACE
+	DefineKey 0, $20, REPEAT_KEY,    ToggleSpritePixel				; SPACE
 	DefineKey 0, $2e, REPEAT_KEY,    NextFrame						; .
 	DefineKey 0, $2c, REPEAT_KEY,    PreviousFrame					; ,
 	DefineKey 0, $14, REPEAT_KEY,    DeleteColumn					; DEL
@@ -1686,6 +1779,10 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $C6, NO_REPEAT_KEY, FlipHorizontal			; SHIFT-F
 	DefineKey KEY_SHIFT, $94, REPEAT_KEY,    InsertColumn			; INS
 	DefineKey KEY_SHIFT, $93, NO_REPEAT_KEY, ClearGridHome			; CLEAR
+	DefineKey KEY_SHIFT, $21, NO_REPEAT_KEY, SelectMultiColor1		; SHIFT 1
+	DefineKey KEY_SHIFT, $22, NO_REPEAT_KEY, SelectMultiColor2		; SHIFT 2
+	DefineKey KEY_SHIFT, $23, NO_REPEAT_KEY, SelectMultiColor3		; SHIFT 3
+	DefineKey KEY_SHIFT, $24, NO_REPEAT_KEY, SelectMultiColor4		; SHIFT 4 (background)
 	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
 	DefineKey KEY_SHIFT|KEY_COMMODORE, $94, REPEAT_KEY, InsertLine	; CMDR-INS
 	DefineKey KEY_SHIFT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; SHIFT CMDR CRSR Up
@@ -1728,6 +1825,7 @@ SpriteEditorKeyMap:
 .bss
 
 SpriteColorValue: .byte 0, 0, 0
+MultiColorValue: .byte 0
 
 FrameNumberStart: .byte 0		; first frame input
 FrameNumberEnd: .byte 0			; last frame input

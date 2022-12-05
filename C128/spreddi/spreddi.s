@@ -11,7 +11,7 @@
 .include "tools/intrinsics.inc"
 
 ; Debug defines
-;KEYBOARD_DEBUG_PRINT = 1
+KEYBOARD_DEBUG_PRINT = 1
 
 .ifdef C64
 CMDR_SHIFT_LOCK		= $291
@@ -714,6 +714,12 @@ MAIN_APPLICATION = *
 
 .proc HideCursor
 	ldy EditCursorX
+	lda EditDoubleCursor
+	beq @DoCursor
+	jsr @DoCursor
+	iny
+
+@DoCursor:
 	lda (CURSOR_LINE),y
 	and #$7f
 	sta (CURSOR_LINE),y
@@ -722,6 +728,12 @@ MAIN_APPLICATION = *
 
 .proc ShowCursor
 	ldy EditCursorX
+	lda EditDoubleCursor
+	beq @DoCursor
+	jsr @DoCursor
+	iny
+
+@DoCursor:
 	lda (CURSOR_LINE),y
 	ora #$80
 	sta (CURSOR_LINE),y
@@ -751,6 +763,13 @@ MAIN_APPLICATION = *
 .endproc
 
 .proc MoveCursorRight
+
+	lda EditDoubleCursor
+	beq @DoCursorRight
+	jsr @DoCursorRight
+
+@DoCursorRight:
+
 	ldy EditCursorX
 	tya
 	tax
@@ -775,6 +794,11 @@ MAIN_APPLICATION = *
 
 .proc MoveCursorLeft
 
+	lda EditDoubleCursor
+	beq @DoCursorLeft
+	jsr @DoCursorLeft
+
+@DoCursorLeft:
 	lda EditCursorX
 	beq @ToPrevLine
 
@@ -3128,6 +3152,7 @@ EditColumns:	.byte 0
 EditLines:		.byte 0
 EditCursorX:	.byte 0
 EditCursorY:	.byte 0
+EditDoubleCursor: .byte 0
 EditClearPreview: .byte 0	; Clear the preview when the frame is updated if set to 1
 ; Size of a framebuffer. 64 for a sprite and 8 for a character
 EditFrameSize: .byte 0
