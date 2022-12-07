@@ -142,6 +142,9 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	lda #$00
 	jsr SpriteColorMode
 
+	ldx #$01
+	jsr SetMultiColor
+
 	; The keymap for the sprite editing functions
 	SetPointer SpriteEditorKeyMap, KeyMapBasePtr
 
@@ -253,7 +256,10 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+3)), CONSOLE_PTR
 	SetPointer SelectedColorTxt, STRING_PTR
 	ldy #COLOR_TXT_COLUMN
-	jmp PrintStringZ
+	jsr PrintStringZ
+
+	ldx MultiColorValue
+	jmp SetMultiColorValue
 
 @Done:
 	rts
@@ -301,7 +307,9 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	sta VIC_SPR0_COLOR+SPRITE_PREVIEW
 	sta VIC_COLOR_RAM+COLOR1_POS
 	ldx #$01
-	jmp PrintSpriteColorName
+	jsr PrintSpriteColorName
+	ldx #$03
+	jmp UpdateSelectedColor
 .endproc
 
 .proc PrintSpriteColorNameMC
@@ -367,7 +375,9 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	lda SpriteColorValue+1
 	sta VIC_SPR_MCOLOR0
 	sta VIC_COLOR_RAM+COLOR2_POS
-	jmp PrintSpriteColorNameMC
+	jsr PrintSpriteColorNameMC
+	ldx #$02
+	jmp UpdateSelectedColor
 .endproc
 
 .proc IncSpriteColor3
@@ -383,7 +393,9 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	sta VIC_SPR_MCOLOR1
 	sta VIC_COLOR_RAM+COLOR3_POS
 	
-	jmp PrintSpriteColorNameMC
+	jsr PrintSpriteColorNameMC
+	ldx #$03
+	jmp UpdateSelectedColor
 .endproc
 
 ; Draw a border around the preview sprite, so the user
@@ -1663,32 +1675,25 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	jmp SetMultiColorValue
 .endproc
 
-.proc SelectMultiColor4
-	ldx #$00
+; X = Color to use
+.proc SetMultiColorValue
+	jsr IsMulticolor
+	bne SetMultiColor
+	rts
+.endproc
+
+.proc SetMultiColor
+	stx MultiColorValue
+	txa
+	clc
+	adc #'0'
+	sta SCREEN_VIC+SCREEN_COLUMNS*(COLOR_TXT_ROW+3)+COLOR_TXT_COLUMN+6
 .endproc
 
 .proc UpdateSelectedColor
-
-	jsr IsMulticolor
-	bne @UpdateColor
-	rts
-
-@UpdateColor:
 	ldx MultiColorValue
-	jmp SetMultiColorValue
-
-.endproc
-
-; X = Color to use
-.proc SetMultiColorValue
-	stx MultiColorValue
-	txa
-	beq @SetColor
 	lda SpriteColorValue-1,x
-
-@SetColor:
-	COLOR_POS = SCREEN_COLUMNS*(COLOR_TXT_ROW+3)+COLOR_TXT_COLUMN+8
-	sta VIC_COLOR_RAM+COLOR_POS
+	sta VIC_COLOR_RAM+SCREEN_COLUMNS*(COLOR_TXT_ROW+3)+COLOR_TXT_COLUMN+8
 
 	rts
 .endproc
@@ -1782,7 +1787,6 @@ SpriteEditorKeyMap:
 	DefineKey KEY_SHIFT, $21, NO_REPEAT_KEY, SelectMultiColor1		; SHIFT 1
 	DefineKey KEY_SHIFT, $22, NO_REPEAT_KEY, SelectMultiColor2		; SHIFT 2
 	DefineKey KEY_SHIFT, $23, NO_REPEAT_KEY, SelectMultiColor3		; SHIFT 3
-	DefineKey KEY_SHIFT, $24, NO_REPEAT_KEY, SelectMultiColor4		; SHIFT 4 (background)
 	DefineKey KEY_SHIFT|KEY_CTRL, $94, REPEAT_KEY, InsertColumns	; CTRL-INS
 	DefineKey KEY_SHIFT|KEY_COMMODORE, $94, REPEAT_KEY, InsertLine	; CMDR-INS
 	DefineKey KEY_SHIFT|KEY_COMMODORE, $91, REPEAT_KEY, ShiftGridUp	; SHIFT CMDR CRSR Up
