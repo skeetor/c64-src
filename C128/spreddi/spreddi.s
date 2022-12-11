@@ -120,7 +120,6 @@ basicstub:
 	lda #COL_GREEN
 	jsr SetBackgroundColor
 	jsr ClearScreen
-
 	jsr DrawScreenborder
 
 	; Disable BASIC sprite handling by C128 Kernel
@@ -166,31 +165,13 @@ basicstub:
 
 .ifdef SHOW_DEBUG_SPRITE
 	jsr CreateDebugSprite
-.else
-	jsr CreateWelcomeSprite
 .endif
-
-	lda #$ff
-	sta WelcomeDone
 
 	SetPointer (SCREEN_VIC+SCREEN_COLUMNS*(SCREEN_LINES+1)), CONSOLE_PTR
 	SetPointer VersionTxt, STRING_PTR
 	ldy #2
 	jsr PrintStringZ
 
-	; Wait until the first key is pressed and
-	; clear the welcome and statusline
-	jsr WaitKeyboardRelease
-	jsr WaitKeyboardPressed
-
-	bit WelcomeDone
-	bpl :+
-	jsr ClearWelcome
-
-	; First key should be processed
-	lda #$ff
-	sta KeyMapWaitRelease
-:
 @KeyLoop:
 	bit KeyMapWaitRelease
 	bmi @SaveKeys
@@ -638,60 +619,6 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc CreateWelcomeSprite
-	ldy #SPRITE_BUFFER_LEN-1
-
-@Loop:
-	lda WelcomeSpriteData,y
-	sta SPRITE_USER_START,y
-	dey
-	bpl @Loop
-
-	lda #0					; A - Source frame
-	ldy	#SPRITE_PREVIEW_TGT	;     SPRITE_PREVIEW_TGT - Copy sprite from source to preview
-	jsr CopySpriteFrame
-	jsr DrawBitMatrix
-	jsr ToggleMulticolor
-	jsr TogglePreviewX
-
-	lda WelcomeColor
-	sta SpriteColorValue
-	jsr SetSpriteColor1
-	lda WelcomeColor+1
-	sta SpriteColorValue+1
-	jsr SetSpriteColor2
-	lda WelcomeColor+2
-	sta SpriteColorValue+2
-	jsr SetSpriteColor3
-
-	rts
-.endproc
-
-.proc ClearWelcome
-	lda #$00
-	sta WelcomeDone
-
-	lda SpriteColorDefaults
-	sta SpriteColorValue
-	jsr SetSpriteColor1
-	lda SpriteColorDefaults+1
-	sta SpriteColorValue+1
-	jsr SetSpriteColor2
-	lda SpriteColorDefaults+2
-	sta SpriteColorValue+2
-	jsr SetSpriteColor3
-
-	lda	VIC_SPR_MCOLOR
-	and #$ff ^ (1 << SPRITE_PREVIEW)
-	jsr SpriteColorMode
-
-	lda	SPRITE_EXP_Y
-	ora #(1 << SPRITE_PREVIEW)
-	jsr SetPreviewX
-
-	jsr ClearGridHome
-	jmp ClearStatusLines
-.endproc
 .proc CallKeyboard
 	jmp (EditorKeyHandler)
 .endproc
@@ -1930,36 +1857,52 @@ MAIN_APPLICATION = *
 	rts
 .endproc
 
-.proc ToggleGridPixel
-	jsr SetDirty
-
+; Calculates the pixelmask from the current editorposition in A.
+;
+; PARAM: A - Cursorposition in Grid
+;
+; RETURN:
+; A = bit shifted into position of the specified bitnumber
+; Y - Index of byte
+.proc GridToPixelMask
+	; Calculate the pixel position from the current editor position. The pixel position
+	; is reversed so A = 0 means leftmost bit and A = 7 means rightmost bit. To get the
+	; correct bitnumber we would have to do (7 - A).
+	; This is because we are using the cursor position as reference which goes from left
+	; to right.
+	; i.E.: A = 2, Y = 1 - Fith bit (7-2) in the second byte
 	ldy #$00			; Byte index
-	lda EditCursorX
-	cmp #8
-	blt @GetPixelMask
-	iny
-	sec
-	sbc #$08
-	cmp #8
-	blt @GetPixelMask
-	iny
-	sec
-	sbc #$08
 
-	; Now we have the bitnumber in A
-	; 0 - Leftmost
-	; 7 - Rightmost
-@GetPixelMask:
+@Loop:
+	cmp #8
+	blt @PixelMask
+
+	sec
+	sbc #$08
+	iny
+	jmp @Loop
+
+@PixelMask:
 	tax
 	lda #$80
 	cpx #$00
-	beq @ToggleBit
+	beq @Done
 
 @FindBitMask:
 	clc
 	lsr
 	dex
 	bne @FindBitMask
+
+@Done:
+	rts
+.endproc
+
+.proc ToggleGridPixel
+	jsr SetDirty
+
+	lda EditCursorX
+	jsr GridToPixelMask
 
 @ToggleBit:
 	; Save the bitmask
@@ -1977,6 +1920,45 @@ MAIN_APPLICATION = *
 	sta (CURSOR_LINE),y
 
 	jmp MoveCursorRight
+.endproc
+
+; Set pixel at the current editor position
+;
+; PARAM:
+; A - Pixel
+; Y - Byteoffset
+.proc SetGridPixel
+	sta TMP_VAL_0
+	lda (PIXEL_LINE),y
+	ora TMP_VAL_0
+	sta (PIXEL_LINE),y
+
+	ldy EditCursorX
+	lda #'*'
+	sta (CURSOR_LINE),y
+
+	rts
+.endproc
+
+; Clear pixel at the current editor position
+;
+; PARAM:
+; A - Pixel
+; Y - Byteoffset
+.proc ClearGridPixel
+	ldx #$ff
+	stx TMP_VAL_0
+	eor TMP_VAL_0
+	sta TMP_VAL_0
+	lda (PIXEL_LINE),y
+	and TMP_VAL_0
+	sta (PIXEL_LINE),y
+
+	lda #'.'
+	ldy EditCursorX
+	sta (CURSOR_LINE),y
+
+	rts
 .endproc
 
 .proc SetDirty
@@ -3083,8 +3065,6 @@ FilenameDefaultTxtLen = *-FilenameDefaultTxt
 EnterNumberErrorMsg: .byte "VALUE MUST BE IN RANGE "
 EnterNumberErrorMsgLen = *-EnterNumberErrorMsg
 
-WelcomeColor: .byte COL_GREEN, COL_RED, COL_WHITE
-
 CanceledTxt:	.byte "           OPERATION CANCELED           ",0
 FilenameTxt:	.byte "FILENAME: ",0
 FilenameTxtLen	= (*-FilenameTxt)-1
@@ -3135,7 +3115,6 @@ ColorNameTxt:
 
 ; Functionpointer to the current keyboardhandler
 EditorKeyHandler: .word 0
-WelcomeDone: .word 0
 SystemMode:.byte 0				; C64/C128/M65
 
 TMP_VAL_0: .word 0

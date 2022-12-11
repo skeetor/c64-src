@@ -83,10 +83,13 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 ; ******************************************
 .proc SpriteEditor
 
+	jsr ClearScreen
+	jsr DrawScreenborder
+
 	; Set the dimension of the sprite editing matrix
 	lda #3
 	sta EditColumnBytes
-	lda #24
+	lda #12
 	sta EditColumns
 	lda #21
 	sta EditLines
@@ -148,7 +151,30 @@ SPRITE_EXP_Y		= VIC_SPR_EXP_Y
 	; The keymap for the sprite editing functions
 	SetPointer SpriteEditorKeyMap, KeyMapBasePtr
 
-	rts
+	;jmp InitSpriteData
+.endproc
+
+.proc InitSpriteData
+	lda SpriteColorDefaults
+	sta SpriteColorValue
+	jsr SetSpriteColor1
+	lda SpriteColorDefaults+1
+	sta SpriteColorValue+1
+	jsr SetSpriteColor2
+	lda SpriteColorDefaults+2
+	sta SpriteColorValue+2
+	jsr SetSpriteColor3
+
+	lda	VIC_SPR_MCOLOR
+	and #$ff ^ (1 << SPRITE_PREVIEW)
+	jsr SpriteColorMode
+
+	lda	SPRITE_EXP_Y
+	ora #(1 << SPRITE_PREVIEW)
+	jsr SetPreviewX
+
+	jsr ClearGridHome
+	jmp ClearStatusLines
 .endproc
 
 .proc TogglePreviewX
